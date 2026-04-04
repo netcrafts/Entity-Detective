@@ -1,0 +1,25 @@
+{
+	"schemaVersion": 1,
+	"id": "entity-detective",
+	"version": "${version}",
+	"name": "Entity Detective",
+	"description": "Admin commands to find and audit mobs by chunk — helps diagnose lazy-chunk despawn lag.",
+	"authors": ["HemisphereMC"],
+	"contact": {
+		"sources": "https://github.com/netcrafts/Entity-Detective"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/entity-detective/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": ["netcrafts.detective.EntityDetective"]
+	},
+	"mixins": ["entity-detective.mixins.json"],
+	"depends": {
+		"fabricloader": ">=0.18.6",
+		"minecraft": "~26.1.1",
+		"java": ">=25",
+		"fabric-api": "*",
+		"fabric-permissions-api-v0": "*"
+	}
+}
