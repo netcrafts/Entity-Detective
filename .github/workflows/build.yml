@@ -40,6 +40,10 @@ jobs:
     steps:
       - name: checkout repository
         uses: actions/checkout@v4
+      - name: read versions
+        run: |
+          echo "MC_VERSION=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)" >> $GITHUB_ENV
+          echo "MOD_VERSION=$(grep '^mod_version=' gradle.properties | cut -d= -f2)" >> $GITHUB_ENV
       - name: setup jdk
         uses: actions/setup-java@v4
         with:
@@ -52,5 +56,10 @@ jobs:
       - name: create github release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/libs/entity-detective-*.jar
+          name: "Entity Detective ${{ env.MOD_VERSION }} for Minecraft ${{ env.MC_VERSION }}"
+          body: |
+            ## What's new in Entity Detective ${{ env.MOD_VERSION }}:
           generate_release_notes: true
+          files: |
+            build/libs/entity-detective-*.jar
+            !build/libs/entity-detective-*-sources.jar
