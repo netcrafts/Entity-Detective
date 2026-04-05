@@ -53,12 +53,15 @@ jobs:
         run: chmod +x ./gradlew
       - name: build jar
         run: ./gradlew build
+      - name: generate release body
+        run: |
+          printf '## What'\''s new in Entity Detective %s:\n\n' "$MOD_VERSION" > release_body.md
+          cat .github/release-notes.md >> release_body.md
       - name: create github release
         uses: softprops/action-gh-release@v2
         with:
           name: "Entity Detective ${{ env.MOD_VERSION }} for Minecraft ${{ env.MC_VERSION }}"
-          body: |
-            ## What's new in Entity Detective ${{ env.MOD_VERSION }}:
+          body_path: release_body.md
           generate_release_notes: true
           files: |
             build/libs/entity-detective-*.jar

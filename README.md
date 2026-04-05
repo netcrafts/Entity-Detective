@@ -67,6 +67,31 @@ Find all entities of a specific type across all loaded dimensions. Tab-complete 
 
 ---
 
+### `/entitydetective item_summary`
+List all loaded **item entities** (dropped items on the ground) grouped by item type across all dimensions. Useful for finding item overflow from farms or mob drops.
+
+```
+/entitydetective item_summary
+/entitydetective item_summary --world overworld
+```
+
+Output shows entity count, total item quantity, and colour-coded severity per type:
+- **Green** — < 100 items
+- **Yellow** — 100–999 items
+- **Red** — ≥ 1 000 items
+
+---
+
+### `/entitydetective item_locate <item_id>`
+Find which chunks contain a specific item entity type, sorted by concentration. Tab-complete is dynamic and limited to item types currently loaded in the world — substring matching works (e.g. `cobble` matches `minecraft:cobblestone`).
+
+```
+/entitydetective item_locate minecraft:cobblestone
+/entitydetective item_locate minecraft:cobblestone --world overworld
+```
+
+---
+
 ### `/entitydetective mobcap`
 Show the live mob cap for your **current dimension** — current count vs. maximum per category, with color-coded saturation (green < 50%, yellow 50–85%, red > 85%).
 
