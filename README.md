@@ -22,16 +22,16 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 
 ## Commands
 
-### `/entitydetective <category>`
+### `/entitydetective mob <category>`
 Find all entities of a mob category, grouped by chunk, across **all loaded dimensions** by default.
 
 ```
-/entitydetective monster
-/entitydetective animal
-/entitydetective ambient
-/entitydetective water_creature
-/entitydetective water_ambient
-/entitydetective misc
+/entitydetective mob monster
+/entitydetective mob creature
+/entitydetective mob ambient
+/entitydetective mob axolotls
+/entitydetective mob water_creature
+/entitydetective mob water_ambient
 ```
 
 **Flags:**
@@ -45,34 +45,45 @@ Find all entities of a mob category, grouped by chunk, across **all loaded dimen
 
 **Examples:**
 ```
-/entitydetective monster --lazy-only
-/entitydetective monster --lazy-only --world overworld
-/entitydetective animal --world nether --summary
-/entitydetective monster --persistent --debug
-/entitydetective monster --debug
+/entitydetective mob monster --lazy-only
+/entitydetective mob monster --lazy-only --world overworld
+/entitydetective mob creature --world nether --summary
+/entitydetective mob monster --persistent --debug
+/entitydetective mob monster --debug
 ```
+
+> **Note:** The `misc` category is intentionally excluded — it is a Minecraft engine catch-all for non-mob entities (projectiles, XP orbs, falling blocks, etc.) with no mob cap. Item entities are handled by `/entitydetective item`.
 
 ---
 
-### `/entitydetective entity <type>`
+### `/entitydetective mob locate <type>`
 Find all entities of a specific type across all loaded dimensions. Tab-complete shows only types **currently loaded in the world**, with substring matching — type `bat` to find `minecraft:bat`, type `piglin` to see all piglin variants.
 
 ```
-/entitydetective entity minecraft:bee
-/entitydetective entity minecraft:bee --lazy-only
-/entitydetective entity minecraft:bee --world overworld
-/entitydetective entity minecraft:bee --debug
-/entitydetective entity minecraft:bee --lazy-only --world overworld --debug
+/entitydetective mob locate minecraft:bee
+/entitydetective mob locate minecraft:bee --lazy-only
+/entitydetective mob locate minecraft:bee --world overworld
+/entitydetective mob locate minecraft:bee --debug
+/entitydetective mob locate minecraft:bee --lazy-only --world overworld --debug
 ```
 
 ---
 
-### `/entitydetective item_summary`
+### `/entitydetective mob cap`
+Show the live mob cap for your **current dimension** — current count vs. maximum per category, with color-coded saturation (green < 50%, yellow 50–85%, red > 85%).
+
+```
+/entitydetective mob cap
+```
+
+---
+
+### `/entitydetective item`
 List all loaded **item entities** (dropped items on the ground) grouped by item type across all dimensions. Useful for finding item overflow from farms or mob drops.
 
 ```
-/entitydetective item_summary
-/entitydetective item_summary --world overworld
+/entitydetective item
+/entitydetective item --world overworld
 ```
 
 Output shows entity count, total item quantity, and colour-coded severity per type:
@@ -82,21 +93,12 @@ Output shows entity count, total item quantity, and colour-coded severity per ty
 
 ---
 
-### `/entitydetective item_locate <item_id>`
+### `/entitydetective item locate <item_id>`
 Find which chunks contain a specific item entity type, sorted by concentration. Tab-complete is dynamic and limited to item types currently loaded in the world — substring matching works (e.g. `cobble` matches `minecraft:cobblestone`).
 
 ```
-/entitydetective item_locate minecraft:cobblestone
-/entitydetective item_locate minecraft:cobblestone --world overworld
-```
-
----
-
-### `/entitydetective mobcap`
-Show the live mob cap for your **current dimension** — current count vs. maximum per category, with color-coded saturation (green < 50%, yellow 50–85%, red > 85%).
-
-```
-/entitydetective mobcap
+/entitydetective item locate minecraft:cobblestone
+/entitydetective item locate minecraft:cobblestone --world overworld
 ```
 
 ---
@@ -127,7 +129,7 @@ A mob is considered **persistent** when it will not naturally despawn:
 - **Leashed** — attached to a fence post or held by a player
 - **Riding a vehicle** — inside a boat or minecart
 
-By default, `/entitydetective <category>` **excludes** persistent mobs (they never contribute to mob cap pressure). Use `--persistent` to see only them.
+By default, `/entitydetective mob <category>` **excludes** persistent mobs (they never contribute to mob cap pressure). Use `--persistent` to see only them.
 
 ---
 
