@@ -2,6 +2,8 @@
 # and submitted pull request. This can help catch issues that only occur on
 # certain platforms or Java versions, and provides a first line of defence
 # against bad commits.
+#
+# On version tags (v*), also creates a GitHub Release and attaches the jar.
 
 name: build
 on: [pull_request, push]
@@ -28,3 +30,27 @@ jobs:
         with:
           name: Artifacts
           path: build/libs/
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+      - name: setup jdk
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'microsoft'
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: build jar
+        run: ./gradlew build
+      - name: create github release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/libs/entity-detective-*.jar
+          generate_release_notes: true
