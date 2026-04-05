@@ -8,7 +8,7 @@
 	"contact": {
 		"sources": "https://github.com/netcrafts/Entity-Detective"
 	},
-	"license": "CC0-1.0",
+	"license": "MIT",
 	"icon": "assets/entity-detective/icon.png",
 	"environment": "*",
 	"entrypoints": {
