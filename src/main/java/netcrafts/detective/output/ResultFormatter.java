@@ -7,10 +7,13 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.ChunkPos;
+
+import org.jetbrains.annotations.Nullable;
 
 import netcrafts.detective.query.EntityQuery.QueryResult;
 import netcrafts.detective.query.MobCapInfo.CategoryInfo;
@@ -76,7 +79,8 @@ public class ResultFormatter {
             boolean lazyOnly,
             boolean debug) {
 
-        int totalEntities = results.stream().mapToInt(r -> r.entities().size()).sum();
+        // 5.5.13 — use long to avoid overflow on servers with large entity counts
+        long totalEntities = results.stream().mapToLong(r -> r.entities().size()).sum();
 
         if (totalEntities == 0) {
             source.sendSuccess(() -> Component.literal(
@@ -117,7 +121,7 @@ public class ResultFormatter {
             String dimName,
             boolean lazyOnly) {
 
-        int total = results.stream().mapToInt(r -> r.entities().size()).sum();
+        long total = results.stream().mapToLong(r -> r.entities().size()).sum();
         String msg = String.format("%s [%s]%s: %d entities across %d chunks",
                 label, dimName,
                 lazyOnly ? " (lazy only)" : "",
@@ -130,7 +134,9 @@ public class ResultFormatter {
     // -------------------------------------------------------------------------
 
     private static MutableComponent formatEntityDebugLine(Entity entity) {
-        String type = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
+        // 5.5.2 / 5.5.8 — getKey() can return null for unregistered modded entity types
+        @Nullable Identifier typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        String type = typeKey != null ? typeKey.toString() : "unknown:" + entity.getType().getDescriptionId();
         String name = entity.hasCustomName() ? " \"" + entity.getCustomName().getString() + "\"" : "";
         String reason = persistenceReason(entity);
         String coords = String.format("%.1f, %.1f, %.1f", entity.getX(), entity.getY(), entity.getZ());

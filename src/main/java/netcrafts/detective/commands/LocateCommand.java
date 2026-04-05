@@ -23,16 +23,45 @@ import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.entity.EntityTypeTest;
 
+import netcrafts.detective.EntityDetective;
 import netcrafts.detective.output.ResultFormatter;
 import netcrafts.detective.query.EntityQuery;
 import netcrafts.detective.query.MobCapInfo;
 
+import org.jetbrains.annotations.Nullable;
+
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class LocateCommand {
+
+    // 5.5.5 — Per-player cooldown: prevents command spam from stalling the server
+    private static final Map<UUID, Long> LAST_USE = new HashMap<>();
+    private static final int COOLDOWN_TICKS = 20; // 1 second
+
+    /** Called on player disconnect to free the cooldown entry. */
+    public static void clearCooldown(UUID playerId) {
+        LAST_USE.remove(playerId);
+    }
+
+    /** Returns true (and sends a failure message) if the player is on cooldown. Console is never rate-limited. */
+    private static boolean onCooldown(CommandContext<CommandSourceStack> ctx) {
+        Entity entity = ctx.getSource().getEntity();
+        if (entity == null) return false; // console source — never rate-limited
+        UUID id = entity.getUUID();
+        long now = ctx.getSource().getServer().getTickCount();
+        if (now - LAST_USE.getOrDefault(id, 0L) < COOLDOWN_TICKS) {
+            ctx.getSource().sendFailure(Component.literal("Command on cooldown, please wait a moment."));
+            return true;
+        }
+        LAST_USE.put(id, now);
+        return false;
+    }
 
     private static final List<String> CATEGORIES = Arrays.stream(MobCategory.values())
             .map(MobCategory::getName)
@@ -162,15 +191,22 @@ public class LocateCommand {
     }
 
     private static int executeMobcap(CommandContext<CommandSourceStack> ctx, String dimArg) {
+        if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
-        ServerLevel world = resolveWorld(source, dimArg);
-        if (world == null) {
-            source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+        try {
+            ServerLevel world = resolveWorld(source, dimArg);
+            if (world == null) {
+                source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                return 0;
+            }
+            String dimName = ResultFormatter.dimensionName(world.dimension());
+            ResultFormatter.sendMobcap(source, MobCapInfo.getForDimension(world), dimName);
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in mobcap command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
             return 0;
         }
-        String dimName = ResultFormatter.dimensionName(world.dimension());
-        ResultFormatter.sendMobcap(source, MobCapInfo.getForDimension(world), dimName);
-        return 1;
     }
 
     private static int executeLocate(
@@ -181,43 +217,50 @@ public class LocateCommand {
             boolean persistent,
             boolean debug) {
 
+        if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
-        String categoryName = StringArgumentType.getString(ctx, "category");
+        try {
+            String categoryName = StringArgumentType.getString(ctx, "category");
 
-        MobCategory category = Arrays.stream(MobCategory.values())
-                .filter(c -> c.getName().equals(categoryName))
-                .findFirst()
-                .orElse(null);
-        if (category == null) {
-            source.sendFailure(Component.literal("Unknown category: " + categoryName
-                    + ". Valid: " + String.join(", ", CATEGORIES)));
-            return 0;
-        }
-
-        // No --world specified → scan all loaded dimensions
-        List<ServerLevel> worlds;
-        if (dimArg == null) {
-            worlds = new java.util.ArrayList<>();
-            source.getServer().getAllLevels().forEach(worlds::add);
-        } else {
-            ServerLevel world = resolveWorld(source, dimArg);
-            if (world == null) {
-                source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+            MobCategory category = Arrays.stream(MobCategory.values())
+                    .filter(c -> c.getName().equals(categoryName))
+                    .findFirst()
+                    .orElse(null);
+            if (category == null) {
+                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                        + ". Valid: " + String.join(", ", CATEGORIES)));
                 return 0;
             }
-            worlds = List.of(world);
-        }
 
-        for (ServerLevel world : worlds) {
-            String dimName = ResultFormatter.dimensionName(world.dimension());
-            var results = EntityQuery.findEntities(world, category, lazyOnly, persistent);
-            if (summary) {
-                ResultFormatter.sendLocateSummary(source, results, category.getName(), dimName, lazyOnly);
+            // No --world specified → scan all loaded dimensions
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
             } else {
-                ResultFormatter.sendLocateResults(source, results, category.getName(), dimName, lazyOnly, debug);
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
             }
+
+            for (ServerLevel world : worlds) {
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                var results = EntityQuery.findEntities(world, category, lazyOnly, persistent);
+                if (summary) {
+                    ResultFormatter.sendLocateSummary(source, results, category.getName(), dimName, lazyOnly);
+                } else {
+                    ResultFormatter.sendLocateResults(source, results, category.getName(), dimName, lazyOnly, debug);
+                }
+            }
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in locate command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
         }
-        return 1;
     }
 
     private static int executeEntityLocate(
@@ -226,38 +269,46 @@ public class LocateCommand {
             String dimArg,
             boolean debug) {
 
+        if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
-        Identifier id = IdentifierArgument.getId(ctx, "entityType");
-        Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
-        if (typeOpt.isEmpty()) {
-            source.sendFailure(Component.literal("Unknown entity type: " + id));
-            return 0;
-        }
-        EntityType<?> entityType = typeOpt.get();
-        String label = id.toString();
-
-        List<ServerLevel> worlds;
-        if (dimArg == null) {
-            worlds = new java.util.ArrayList<>();
-            source.getServer().getAllLevels().forEach(worlds::add);
-        } else {
-            ServerLevel world = resolveWorld(source, dimArg);
-            if (world == null) {
-                source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+        try {
+            Identifier id = IdentifierArgument.getId(ctx, "entityType");
+            Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
+            if (typeOpt.isEmpty()) {
+                source.sendFailure(Component.literal("Unknown entity type: " + id));
                 return 0;
             }
-            worlds = List.of(world);
-        }
+            EntityType<?> entityType = typeOpt.get();
+            String label = id.toString();
 
-        for (ServerLevel world : worlds) {
-            String dimName = ResultFormatter.dimensionName(world.dimension());
-            var results = EntityQuery.findByType(world, entityType, lazyOnly);
-            ResultFormatter.sendLocateResults(source, results, label, dimName, lazyOnly, debug);
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
+            } else {
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
+            }
+
+            for (ServerLevel world : worlds) {
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                var results = EntityQuery.findByType(world, entityType, lazyOnly);
+                ResultFormatter.sendLocateResults(source, results, label, dimName, lazyOnly, debug);
+            }
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in entity locate command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
         }
-        return 1;
     }
 
-    private static ServerLevel resolveWorld(CommandSourceStack source, String dimArg) {
+    @Nullable
+    private static ServerLevel resolveWorld(CommandSourceStack source, @Nullable String dimArg) {
         if (dimArg == null) return source.getLevel();
         ResourceKey<Level> key = switch (dimArg) {
             case "overworld" -> Level.OVERWORLD;

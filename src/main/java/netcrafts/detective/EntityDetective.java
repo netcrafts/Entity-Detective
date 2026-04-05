@@ -2,6 +2,7 @@ package netcrafts.detective;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +22,10 @@ public class EntityDetective implements ModInitializer {
 		LOGGER.info("Entity Detective loaded.");
 		CommandRegistrationCallback.EVENT.register((dispatcher, buildContext, selection) -> {
 			LocateCommand.register(dispatcher);
+		});
+		// 5.5.7 — clean up per-player cooldown state on disconnect
+		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+			LocateCommand.clearCooldown(handler.player.getUUID());
 		});
 	}
 }
