@@ -55,8 +55,8 @@ jobs:
         run: ./gradlew build
       - name: generate release body
         run: |
-          printf '## What'\''s new in Entity Detective %s:\n\n' "$MOD_VERSION" > release_body.md
-          cat .github/release-notes.md >> release_body.md
+          printf '## What'"'"'s new in Entity Detective %s:\n\n' "$MOD_VERSION" > release_body.md
+          grep '^-' .github/release-notes.md >> release_body.md
       - name: create github release
         uses: softprops/action-gh-release@v2
         with:
