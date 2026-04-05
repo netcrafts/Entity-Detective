@@ -15,6 +15,7 @@ import net.minecraft.world.level.ChunkPos;
 
 import org.jetbrains.annotations.Nullable;
 
+import netcrafts.detective.query.EntityQuery.ItemTypeCount;
 import netcrafts.detective.query.EntityQuery.QueryResult;
 import netcrafts.detective.query.MobCapInfo.CategoryInfo;
 
@@ -175,6 +176,45 @@ public class ResultFormatter {
                 .withStyle(ChatFormatting.WHITE);
 
         return coords.append(countPart);
+    }
+
+    // -------------------------------------------------------------------------
+    // Item entity display
+    // -------------------------------------------------------------------------
+
+    public static void sendItemSummary(
+            CommandSourceStack source,
+            List<ItemTypeCount> counts,
+            String dimName) {
+
+        long totalEntities = counts.stream().mapToLong(ItemTypeCount::entityCount).sum();
+        long totalItems    = counts.stream().mapToLong(ItemTypeCount::itemTotal).sum();
+
+        if (totalEntities == 0) {
+            source.sendSuccess(() -> Component.literal(
+                    "No item entities found in " + dimName + ".")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "-- Item Entities [" + dimName + "]: " + totalEntities + " entities, "
+                + totalItems + " items --")
+                .withStyle(ChatFormatting.GOLD), false);
+
+        for (ItemTypeCount row : counts) {
+            // Colour by item count volume: green <100, yellow <1000, red ≥1000
+            ChatFormatting color = row.itemTotal() < 100 ? ChatFormatting.GREEN
+                    : row.itemTotal() < 1000 ? ChatFormatting.YELLOW
+                    : ChatFormatting.RED;
+            String line = String.format("  %-40s %5d items  (%d entities)",
+                    row.itemId().toString(), row.itemTotal(), row.entityCount());
+            source.sendSuccess(() -> Component.literal(line).withStyle(color), false);
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "Total: " + totalItems + " items in " + totalEntities + " entities")
+                .withStyle(ChatFormatting.GRAY), false);
     }
 
     public static String dimensionName(net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> key) {

@@ -1,30 +1,40 @@
 package netcrafts.detective.query;
 
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.entity.EntityTypeTest;
+
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
 public class EntityQuery {
 
     public record QueryResult(ChunkPos chunkPos, List<Entity> entities) {}
 
     /**
-     * Finds all entities of the given MobCategory in the given dimension.
+     * Summary row for item_summary: one entry per distinct item type.
      *
-     * @param world            the dimension to search
-     * @param category         the MobCategory to match (engine-authoritative, replaces manual entity tag lists)
-     * @param lazyOnly         if true, only include entities in lazy (non-block-ticking) chunks
-     * @param includePersistent if true, include named/leashed/traded mobs; default false excludes them
-     * @return results grouped by chunk, sorted descending by entity count
+     * @param itemId      registry key, e.g. minecraft:cobblestone
+     * @param entityCount number of ItemEntity instances
+     * @param itemTotal   sum of ItemStack.getCount() across all those entities
+     */
+    public record ItemTypeCount(Identifier itemId, long entityCount, long itemTotal) {}
+
+    /**
+     * Finds all entities of the given MobCategory in the given dimension.
      */
     public static List<QueryResult> findEntities(
             ServerLevel world,
@@ -38,22 +48,14 @@ public class EntityQuery {
         world.getEntities(
             EntityTypeTest.forClass(Entity.class),
             entity -> {
-                // Filter by MobCategory — same criterion the engine uses for mob cap
                 if (entity.getType().getCategory() != category) return false;
 
-                // A mob is "persistent" if it won't naturally despawn:
-                //   - name-tagged, traded-with villager  → isPersistenceRequired()
-                //   - baby zombies, special mobs         → requiresCustomPersistence()
-                //   - riding a boat or minecart          → isPassenger()
-                //   - leashed                            → isLeashed()
                 boolean isPersistent = entity instanceof Mob mob
                         && (mob.isPersistenceRequired()
                             || mob.requiresCustomPersistence()
                             || mob.isPassenger()
                             || mob.isLeashed());
 
-                // --persistent flag: show ONLY persistent mobs
-                // default:           exclude persistent mobs (they never despawn anyway)
                 if (includePersistent) {
                     return isPersistent;
                 } else {
@@ -77,7 +79,7 @@ public class EntityQuery {
 
     /**
      * Finds all entities of the given EntityType in the given dimension,
-     * grouped by chunk. Used for /entitydetective entity <type> queries.
+     * grouped by chunk.
      */
     public static List<QueryResult> findByType(
             ServerLevel world,
@@ -103,4 +105,59 @@ public class EntityQuery {
                 .sorted(Comparator.comparingInt(r -> -r.entities().size()))
                 .toList();
     }
+
+    /**
+     * Counts all loaded item entities in the given dimension, grouped by item type.
+     * Each row contains both entity count and total item count (stack × quantity).
+     * Results are sorted descending by item total.
+     * Items whose registry key is null (unregistered modded items) are skipped.
+     */
+    public static List<ItemTypeCount> countItemsByType(ServerLevel world) {
+        ArrayList<ItemEntity> all = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(ItemEntity.class), e -> true, all);
+
+        // entity count and item total keyed by Identifier
+        Map<Identifier, long[]> counts = new LinkedHashMap<>();
+        for (ItemEntity ie : all) {
+            @Nullable Identifier key = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
+            if (key == null) continue;
+            long[] row = counts.computeIfAbsent(key, k -> new long[]{0L, 0L});
+            row[0] += 1;                       // entity count
+            row[1] += ie.getItem().getCount(); // item total
+        }
+
+        return counts.entrySet().stream()
+                .map(e -> new ItemTypeCount(e.getKey(), e.getValue()[0], e.getValue()[1]))
+                .sorted(Comparator.<ItemTypeCount>comparingLong(r -> -r.itemTotal()))
+                .toList();
+    }
+
+    /**
+     * Finds all item entities in the given dimension matching the given item ID,
+     * grouped by chunk, sorted descending by entity count per chunk.
+     * Used for /entitydetective item_locate.
+     */
+    public static List<QueryResult> findItemsByType(ServerLevel world, Identifier itemId) {
+        Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
+        ArrayList<ItemEntity> matched = new ArrayList<>();
+        world.getEntities(
+            EntityTypeTest.forClass(ItemEntity.class),
+            ie -> {
+                @Nullable Identifier key = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
+                return itemId.equals(key);
+            },
+            matched
+        );
+
+        for (ItemEntity ie : matched) {
+            ChunkPos pos = ChunkPos.containing(ie.blockPosition());
+            byChunk.computeIfAbsent(pos, k -> new ArrayList<>()).add(ie);
+        }
+
+        return byChunk.entrySet().stream()
+                .map(e -> new QueryResult(e.getKey(), e.getValue()))
+                .sorted(Comparator.comparingInt(r -> -r.entities().size()))
+                .toList();
+    }
 }
+

@@ -20,12 +20,14 @@ import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.entity.EntityTypeTest;
 
 import netcrafts.detective.EntityDetective;
 import netcrafts.detective.output.ResultFormatter;
 import netcrafts.detective.query.EntityQuery;
+import netcrafts.detective.query.EntityQuery.ItemTypeCount;
 import netcrafts.detective.query.MobCapInfo;
 
 import org.jetbrains.annotations.Nullable;
@@ -84,6 +86,26 @@ public class LocateCommand {
                     level.getEntities(EntityTypeTest.forClass(Entity.class), e -> true, buf);
                     for (Entity e : buf) {
                         Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(e.getType());
+                        if (key != null) keys.add(key.toString());
+                    }
+                });
+                String remaining = builder.getRemaining().toLowerCase();
+                keys.stream()
+                        .filter(k -> k.toLowerCase().contains(remaining))
+                        .forEach(builder::suggest);
+                return builder.buildFuture();
+            };
+
+    // Dynamic suggestions: only item types that currently have at least one loaded ItemEntity
+    private static final SuggestionProvider<CommandSourceStack> ITEM_TYPE_SUGGESTIONS =
+            (ctx, builder) -> {
+                java.util.Set<String> keys = new java.util.TreeSet<>();
+                java.util.ArrayList<ItemEntity> buf = new java.util.ArrayList<>();
+                ctx.getSource().getServer().getAllLevels().forEach(level -> {
+                    buf.clear();
+                    level.getEntities(EntityTypeTest.forClass(ItemEntity.class), e -> true, buf);
+                    for (ItemEntity ie : buf) {
+                        Identifier key = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
                         if (key != null) keys.add(key.toString());
                     }
                 });
@@ -183,6 +205,31 @@ public class LocateCommand {
                                 .then(Commands.literal("--debug")
                                     .executes(ctx -> executeEntityLocate(ctx, false, StringArgumentType.getString(ctx, "dim"), true))
                                 )
+                            )
+                        )
+                    )
+                )
+
+                // /entitydetective item_summary [--world <dim>]
+                .then(Commands.literal("item_summary")
+                    .executes(ctx -> executeItemSummary(ctx, null))
+                    .then(Commands.literal("--world")
+                        .then(Commands.argument("dim", StringArgumentType.word())
+                            .suggests(DIM_SUGGESTIONS)
+                            .executes(ctx -> executeItemSummary(ctx, StringArgumentType.getString(ctx, "dim")))
+                        )
+                    )
+                )
+
+                // /entitydetective item_locate <item_id> [--world <dim>]
+                .then(Commands.literal("item_locate")
+                    .then(Commands.argument("itemType", IdentifierArgument.id())
+                        .suggests(ITEM_TYPE_SUGGESTIONS)
+                        .executes(ctx -> executeItemLocate(ctx, null))
+                        .then(Commands.literal("--world")
+                            .then(Commands.argument("dim", StringArgumentType.word())
+                                .suggests(DIM_SUGGESTIONS)
+                                .executes(ctx -> executeItemLocate(ctx, StringArgumentType.getString(ctx, "dim")))
                             )
                         )
                     )
@@ -302,6 +349,85 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in entity locate command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeItemSummary(CommandContext<CommandSourceStack> ctx, @Nullable String dimArg) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
+            } else {
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
+            }
+
+            // Aggregate counts across all targeted dimensions
+            java.util.Map<Identifier, long[]> combined = new java.util.LinkedHashMap<>();
+            for (ServerLevel world : worlds) {
+                for (ItemTypeCount row : EntityQuery.countItemsByType(world)) {
+                    long[] acc = combined.computeIfAbsent(row.itemId(), k -> new long[]{0L, 0L});
+                    acc[0] += row.entityCount();
+                    acc[1] += row.itemTotal();
+                }
+            }
+            List<ItemTypeCount> merged = combined.entrySet().stream()
+                    .map(e -> new ItemTypeCount(e.getKey(), e.getValue()[0], e.getValue()[1]))
+                    .sorted(java.util.Comparator.<ItemTypeCount>comparingLong(r -> -r.itemTotal()))
+                    .toList();
+
+            String dimName = dimArg == null ? "all dimensions" : dimArg;
+            ResultFormatter.sendItemSummary(source, merged, dimName);
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in item_summary command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeItemLocate(CommandContext<CommandSourceStack> ctx, @Nullable String dimArg) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            Identifier id = IdentifierArgument.getId(ctx, "itemType");
+            // Validate item exists in registry
+            if (!BuiltInRegistries.ITEM.containsKey(id)) {
+                source.sendFailure(Component.literal("Unknown item: " + id));
+                return 0;
+            }
+            String label = id.toString();
+
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
+            } else {
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
+            }
+
+            for (ServerLevel world : worlds) {
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                var results = EntityQuery.findItemsByType(world, id);
+                ResultFormatter.sendLocateResults(source, results, label, dimName, false, false);
+            }
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in item_locate command", e);
             source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
             return 0;
         }
