@@ -2,10 +2,13 @@ package netcrafts.detective.output;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.ChunkPos;
 
@@ -68,22 +71,23 @@ public class ResultFormatter {
     public static void sendLocateResults(
             CommandSourceStack source,
             List<QueryResult> results,
-            MobCategory category,
+            String label,
             String dimName,
-            boolean lazyOnly) {
+            boolean lazyOnly,
+            boolean debug) {
 
         int totalEntities = results.stream().mapToInt(r -> r.entities().size()).sum();
 
         if (totalEntities == 0) {
             source.sendSuccess(() -> Component.literal(
-                    "No " + category.getName() + " entities found" +
+                    "No " + label + " entities found" +
                     (lazyOnly ? " in lazy chunks" : "") + " in " + dimName + ".")
                     .withStyle(ChatFormatting.YELLOW), false);
             return;
         }
 
         String header = String.format("-- %s [%s]%s: %d entities in %d chunks --",
-                category.getName(), dimName,
+                label, dimName,
                 lazyOnly ? " (lazy only)" : "",
                 totalEntities, results.size());
         source.sendSuccess(() -> Component.literal(header).withStyle(ChatFormatting.GOLD), false);
@@ -92,6 +96,11 @@ public class ResultFormatter {
         for (int i = 0; i < shown; i++) {
             QueryResult r = results.get(i);
             source.sendSuccess(() -> formatChunkLine(r), false);
+            if (debug) {
+                for (Entity entity : r.entities()) {
+                    source.sendSuccess(() -> formatEntityDebugLine(entity), false);
+                }
+            }
         }
 
         if (results.size() > MAX_CHUNKS_SHOWN) {
@@ -104,13 +113,13 @@ public class ResultFormatter {
     public static void sendLocateSummary(
             CommandSourceStack source,
             List<QueryResult> results,
-            MobCategory category,
+            String label,
             String dimName,
             boolean lazyOnly) {
 
         int total = results.stream().mapToInt(r -> r.entities().size()).sum();
         String msg = String.format("%s [%s]%s: %d entities across %d chunks",
-                category.getName(), dimName,
+                label, dimName,
                 lazyOnly ? " (lazy only)" : "",
                 total, results.size());
         source.sendSuccess(() -> Component.literal(msg).withStyle(ChatFormatting.YELLOW), false);
@@ -119,6 +128,28 @@ public class ResultFormatter {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private static MutableComponent formatEntityDebugLine(Entity entity) {
+        String type = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
+        String name = entity.hasCustomName() ? " \"" + entity.getCustomName().getString() + "\"" : "";
+        String reason = persistenceReason(entity);
+        String coords = String.format("%.1f, %.1f, %.1f", entity.getX(), entity.getY(), entity.getZ());
+        String tpCommand = String.format("/tp @s %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
+        MutableComponent line = Component.literal("    " + type + name + "  @ " + coords + "  (" + reason + ")")
+                .withStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)
+                        .withClickEvent(new ClickEvent.SuggestCommand(tpCommand)));
+        return line;
+    }
+
+    private static String persistenceReason(Entity entity) {
+        if (!(entity instanceof Mob mob)) return "non-mob";
+        if (mob.hasCustomName() && mob.isPersistenceRequired()) return "name tagged";
+        if (mob.isPersistenceRequired()) return "holding item";
+        if (mob.isPassenger()) return "riding vehicle";
+        if (mob.isLeashed()) return "leashed";
+        if (mob.requiresCustomPersistence()) return "custom persistence";
+        return "unknown";
+    }
 
     private static MutableComponent formatChunkLine(QueryResult r) {
         ChunkPos pos = r.chunkPos();

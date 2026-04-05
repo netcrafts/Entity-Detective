@@ -2,6 +2,7 @@ package netcrafts.detective.query;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.ChunkPos;
@@ -40,16 +41,54 @@ public class EntityQuery {
                 // Filter by MobCategory — same criterion the engine uses for mob cap
                 if (entity.getType().getCategory() != category) return false;
 
-                // Exclude persistent mobs unless caller asks for them:
-                //   isPersistenceRequired()      — named mobs, traded-with villagers
-                //   requiresCustomPersistence()  — leashed, baby animals, etc.
-                if (!includePersistent && entity instanceof Mob mob
-                        && (mob.isPersistenceRequired() || mob.requiresCustomPersistence())) {
-                    return false;
-                }
+                // A mob is "persistent" if it won't naturally despawn:
+                //   - name-tagged, traded-with villager  → isPersistenceRequired()
+                //   - baby zombies, special mobs         → requiresCustomPersistence()
+                //   - riding a boat or minecart          → isPassenger()
+                //   - leashed                            → isLeashed()
+                boolean isPersistent = entity instanceof Mob mob
+                        && (mob.isPersistenceRequired()
+                            || mob.requiresCustomPersistence()
+                            || mob.isPassenger()
+                            || mob.isLeashed());
 
-                return true;
+                // --persistent flag: show ONLY persistent mobs
+                // default:           exclude persistent mobs (they never despawn anyway)
+                if (includePersistent) {
+                    return isPersistent;
+                } else {
+                    return !isPersistent;
+                }
             },
+            matched
+        );
+
+        for (Entity entity : matched) {
+            if (lazyOnly && !ChunkStatusUtil.isLazy(world, entity)) continue;
+            ChunkPos pos = ChunkPos.containing(entity.blockPosition());
+            byChunk.computeIfAbsent(pos, k -> new ArrayList<>()).add(entity);
+        }
+
+        return byChunk.entrySet().stream()
+                .map(e -> new QueryResult(e.getKey(), e.getValue()))
+                .sorted(Comparator.comparingInt(r -> -r.entities().size()))
+                .toList();
+    }
+
+    /**
+     * Finds all entities of the given EntityType in the given dimension,
+     * grouped by chunk. Used for /entitydetective entity <type> queries.
+     */
+    public static List<QueryResult> findByType(
+            ServerLevel world,
+            EntityType<?> entityType,
+            boolean lazyOnly) {
+
+        Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
+        ArrayList<Entity> matched = new ArrayList<>();
+        world.getEntities(
+            EntityTypeTest.forClass(Entity.class),
+            entity -> entity.getType() == entityType,
             matched
         );
 

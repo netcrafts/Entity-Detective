@@ -23,7 +23,7 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 ## Commands
 
 ### `/entitydetective <category>`
-Find all entities of a mob category, grouped by chunk, across all loaded dimensions.
+Find all entities of a mob category, grouped by chunk, across **all loaded dimensions** by default.
 
 ```
 /entitydetective monster
@@ -40,34 +40,69 @@ Find all entities of a mob category, grouped by chunk, across all loaded dimensi
 | `--lazy-only` | Only show entities with no player within 128 blocks (won't despawn naturally) |
 | `--world <dim>` | Scope to a specific dimension: `overworld`, `nether`, or `end` |
 | `--summary` | One-line summary per dimension instead of full chunk list |
-| `--persistent` | Include named, leashed, and traded-with mobs (excluded by default) |
+| `--persistent` | Show only persistent mobs (name-tagged, holding a picked-up item, leashed, riding a vehicle) |
+| `--debug` | Show each entity individually with exact coordinates, type, and persistence reason (clickable to `/tp`) |
 
 **Examples:**
 ```
 /entitydetective monster --lazy-only
 /entitydetective monster --lazy-only --world overworld
 /entitydetective animal --world nether --summary
+/entitydetective monster --persistent --debug
+/entitydetective monster --debug
 ```
 
 ---
 
 ### `/entitydetective entity <type>`
-Find all entities of a specific type across all loaded dimensions. Tab-complete shows only types currently loaded in the world.
+Find all entities of a specific type across all loaded dimensions. Tab-complete shows only types **currently loaded in the world**, with substring matching — type `bat` to find `minecraft:bat`, type `piglin` to see all piglin variants.
 
 ```
 /entitydetective entity minecraft:bee
-/entitydetective entity minecraft:villager --lazy-only
-/entitydetective entity minecraft:cow --world overworld
+/entitydetective entity minecraft:bee --lazy-only
+/entitydetective entity minecraft:bee --world overworld
+/entitydetective entity minecraft:bee --debug
+/entitydetective entity minecraft:bee --lazy-only --world overworld --debug
 ```
 
 ---
 
 ### `/entitydetective mobcap`
-Show the live mob cap for your current dimension — current count vs. maximum per category, with color-coded saturation (green < 50%, yellow 50–85%, red > 85%).
+Show the live mob cap for your **current dimension** — current count vs. maximum per category, with color-coded saturation (green < 50%, yellow 50–85%, red > 85%).
 
 ```
 /entitydetective mobcap
 ```
+
+---
+
+## Debug output
+
+Adding `--debug` to any command expands each chunk line to list every individual entity with:
+- Registry type (e.g. `minecraft:piglin_brute`)
+- Custom name if name-tagged
+- Exact XYZ coordinates
+- Persistence reason (`name tagged`, `holding item`, `leashed`, `riding vehicle`, `custom persistence`)
+- Click the line to paste a `/tp` command directly to that entity
+
+```
+-- monster [nether]: 9 entities in 1 chunks --
+  [6, 11] — 9 entities
+    minecraft:piglin_brute  @ 103.5, 45.0, 182.3  (holding item)
+    minecraft:piglin_brute  "Guard"  @ 101.0, 44.0, 184.7  (name tagged)
+```
+
+---
+
+## Persistent mobs explained
+
+A mob is considered **persistent** when it will not naturally despawn:
+- **Name-tagged** — named with a name tag
+- **Holding a picked-up item** — `persistenceRequired` is set when a mob equips a ground item via `setItemSlotAndDropWhenKilled`
+- **Leashed** — attached to a fence post or held by a player
+- **Riding a vehicle** — inside a boat or minecart
+
+By default, `/entitydetective <category>` **excludes** persistent mobs (they never contribute to mob cap pressure). Use `--persistent` to see only them.
 
 ---
 
