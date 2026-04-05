@@ -2,12 +2,14 @@ package netcrafts.detective;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import netcrafts.detective.commands.LocateCommand;
+import netcrafts.detective.query.EntityProfiler;
 
 public class EntityDetective implements ModInitializer {
 	public static final String MOD_ID = "entity-detective";
@@ -27,5 +29,7 @@ public class EntityDetective implements ModInitializer {
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			LocateCommand.clearCooldown(handler.player.getUUID());
 		});
+		// Advance the entity profiler tick counter each server tick
+		ServerTickEvents.END_SERVER_TICK.register(server -> EntityProfiler.INSTANCE.onServerTick(server));
 	}
 }

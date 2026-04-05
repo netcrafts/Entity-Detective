@@ -8,10 +8,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -20,6 +23,7 @@ import netcrafts.detective.query.EntityQuery.QueryResult;
 import netcrafts.detective.query.MobCapInfo.CategoryInfo;
 
 import java.util.List;
+import java.util.Map;
 
 public class ResultFormatter {
 
@@ -215,6 +219,73 @@ public class ResultFormatter {
         source.sendSuccess(() -> Component.literal(
                 "Total: " + totalItems + " items in " + totalEntities + " entities")
                 .withStyle(ChatFormatting.GRAY), false);
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity profile display
+    // -------------------------------------------------------------------------
+
+    /**
+     * Sends the result of an entity tick profiling session.
+     *
+     * @param source        who to send results to
+     * @param type          the profiled entity type
+     * @param ticks         the sample window (total ticks)
+     * @param perDim        per-dimension data: [0] total nanos, [1] total entity-ticks
+     */
+    public static void sendProfileResults(
+            CommandSourceStack source,
+            EntityType<?> type,
+            int ticks,
+            Map<ResourceKey<Level>, long[]> perDim) {
+
+        @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+        String label = id != null ? id.toString() : type.getDescriptionId();
+
+        double divider = 1.0 / ticks / 1_000_000.0; // nanos per tick → ms per tick
+        long totalNanos = perDim.values().stream().mapToLong(d -> d[0]).sum();
+        long totalCount = perDim.values().stream().mapToLong(d -> d[1]).sum();
+
+        source.sendSuccess(() -> Component.literal(
+                String.format("-- Entity Profile: %s (%d ticks) --", label, ticks))
+                .withStyle(ChatFormatting.GOLD), false);
+
+        if (totalCount == 0) {
+            source.sendSuccess(() -> Component.literal(
+                    "  No entities of this type were ticked during the sample window.")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        double avgMs    = divider * totalNanos;
+        double avgCount = (double) totalCount / ticks;
+
+        source.sendSuccess(() -> Component.literal(
+                String.format("  Avg. tick cost:  %.3fms / tick", avgMs))
+                .withStyle(ChatFormatting.WHITE), false);
+        source.sendSuccess(() -> Component.literal(
+                String.format("  Avg. count:      %.1f entities / tick", avgCount))
+                .withStyle(ChatFormatting.WHITE), false);
+        source.sendSuccess(() -> Component.literal(
+                String.format("  Total sampled:   %d entity-ticks", totalCount))
+                .withStyle(ChatFormatting.GRAY), false);
+
+        if (perDim.size() > 1) {
+            for (var entry : perDim.entrySet()) {
+                String dimName = dimensionName(entry.getKey());
+                long[] data = entry.getValue();
+                double dimMs       = divider * data[0];
+                double dimAvgCount = (double) data[1] / ticks;
+                source.sendSuccess(() -> Component.literal(
+                        String.format("  %-12s %.3fms/tick,  %.1f entities/tick",
+                                dimName + ":", dimMs, dimAvgCount))
+                        .withStyle(ChatFormatting.AQUA), false);
+            }
+        } else if (!perDim.isEmpty()) {
+            String dimName = dimensionName(perDim.keySet().iterator().next());
+            source.sendSuccess(() -> Component.literal("  Dimension: " + dimName)
+                    .withStyle(ChatFormatting.GRAY), false);
+        }
     }
 
     public static String dimensionName(net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> key) {

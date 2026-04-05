@@ -69,6 +69,28 @@ Find all entities of a specific type across all loaded dimensions. Tab-complete 
 
 ---
 
+### `/entitydetective mob profile <type> [<ticks>]`
+Time how many milliseconds per tick all entities of a given type collectively consume, measured over a rolling window of server ticks. Results are sent automatically when the window completes. Useful for identifying which mob type is causing MSPT spikes.
+
+| Parameter | Default | Min | Max |
+|-----------|---------|-----|-----|
+| `ticks` | `100` (5 s) | `20` (1 s) | `6000` (5 min) |
+
+```
+/entitydetective mob profile minecraft:zombie
+/entitydetective mob profile minecraft:zombie 200
+```
+
+Output after the sample window:
+- **Avg. tick cost** — average ms/tick spent ticking all entities of this type
+- **Avg. count** — average number of entities ticked per tick during the window
+- **Total sampled** — total entity-ticks observed
+- Per-dimension breakdown when entities span multiple worlds
+
+> Profiling technique adapted from [fabric-carpet](https://github.com/gnembon/fabric-carpet)'s `CarpetProfiler`.
+
+---
+
 ### `/entitydetective mob cap`
 Show the live mob cap for your **current dimension** — current count vs. maximum per category, with color-coded saturation (green < 50%, yellow 50–85%, red > 85%).
 
@@ -167,6 +189,12 @@ cd Entity-Detective
 ./gradlew build
 # Output: build/libs/entity-detective-<version>.jar
 ```
+
+---
+
+## Credits
+
+The entity tick profiling feature (`mob profile`) uses a mixin approach adapted from [fabric-carpet](https://github.com/gnembon/fabric-carpet) by gnembon and contributors, specifically `CarpetProfiler` and `Level_tickMixin`. fabric-carpet is licensed under LGPL-3.0.
 
 ---
 

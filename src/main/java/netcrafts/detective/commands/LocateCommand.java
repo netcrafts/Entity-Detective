@@ -1,6 +1,7 @@
 package netcrafts.detective.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -26,6 +27,7 @@ import net.minecraft.world.level.entity.EntityTypeTest;
 
 import netcrafts.detective.EntityDetective;
 import netcrafts.detective.output.ResultFormatter;
+import netcrafts.detective.query.EntityProfiler;
 import netcrafts.detective.query.EntityQuery;
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
 import netcrafts.detective.query.MobCapInfo;
@@ -130,6 +132,17 @@ public class LocateCommand {
                     // mob cap — shows live mob cap for player's current dimension
                     .then(Commands.literal("cap")
                         .executes(ctx -> executeMobcap(ctx, null))
+                    )
+
+                    // mob profile <entityType> [ticks]
+                    .then(Commands.literal("profile")
+                        .then(Commands.argument("entityType", IdentifierArgument.id())
+                            .suggests(ENTITY_TYPE_SUGGESTIONS)
+                            .executes(ctx -> executeProfile(ctx, 100))
+                            .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
+                                .executes(ctx -> executeProfile(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
+                            )
+                        )
                     )
 
                     // mob locate <entityType> [flags]
@@ -443,6 +456,24 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in item_locate command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeProfile(CommandContext<CommandSourceStack> ctx, int ticks) {
+        CommandSourceStack source = ctx.getSource();
+        try {
+            Identifier id = IdentifierArgument.getId(ctx, "entityType");
+            Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
+            if (typeOpt.isEmpty()) {
+                source.sendFailure(Component.literal("Unknown entity type: " + id));
+                return 0;
+            }
+            EntityProfiler.INSTANCE.start(source, typeOpt.get(), ticks);
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile command", e);
             source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
             return 0;
         }
