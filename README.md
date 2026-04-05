@@ -52,33 +52,34 @@ Find all entities of a mob category, grouped by chunk, across **all loaded dimen
 /entitydetective mob monster --debug
 ```
 
-> **Note:** The `misc` category is intentionally excluded — it is a Minecraft engine catch-all for non-mob entities (projectiles, XP orbs, falling blocks, etc.) with no mob cap. Item entities are handled by `/entitydetective item`.
+> **Note:** The `misc` category is intentionally excluded — it is a Minecraft engine catch-all for non-mob entities (projectiles, XP orbs, falling blocks, etc.) with no mob cap. Item entities are handled by `/entitydetective item`. To locate or profile any specific entity type (including non-mobs), use `/entitydetective entity`.
 
 ---
 
-### `/entitydetective mob locate <type>`
-Find all entities of a specific type across all loaded dimensions. Tab-complete shows only types **currently loaded in the world**, with substring matching — type `bat` to find `minecraft:bat`, type `piglin` to see all piglin variants.
+### `/entitydetective entity locate <type>`
+Find all entities of a specific type across all loaded dimensions. Works on **any entity type** — mobs, item frames, boats, falling blocks, etc. Tab-complete shows only types **currently loaded in the world**, with substring matching — type `bat` to find `minecraft:bat`, type `item_frame` to find item frames.
 
 ```
-/entitydetective mob locate minecraft:bee
-/entitydetective mob locate minecraft:bee --lazy-only
-/entitydetective mob locate minecraft:bee --world overworld
-/entitydetective mob locate minecraft:bee --debug
-/entitydetective mob locate minecraft:bee --lazy-only --world overworld --debug
+/entitydetective entity locate minecraft:bee
+/entitydetective entity locate minecraft:bee --lazy-only
+/entitydetective entity locate minecraft:bee --world overworld
+/entitydetective entity locate minecraft:bee --debug
+/entitydetective entity locate minecraft:item_frame --lazy-only --world overworld --debug
 ```
 
 ---
 
-### `/entitydetective mob profile <type> [<ticks>]`
-Time how many milliseconds per tick all entities of a given type collectively consume, measured over a rolling window of server ticks. Results are sent automatically when the window completes. Useful for identifying which mob type is causing MSPT spikes.
+### `/entitydetective entity profile <type> [<ticks>]`
+Time how many milliseconds per tick all entities of a given type collectively consume, measured over a rolling window of server ticks. Results are sent automatically when the window completes. Works on **any entity type** — useful for diagnosing MSPT spikes from mobs, item frames, boats, or any other entity.
 
 | Parameter | Default | Min | Max |
 |-----------|---------|-----|-----|
 | `ticks` | `100` (5 s) | `20` (1 s) | `6000` (5 min) |
 
 ```
-/entitydetective mob profile minecraft:zombie
-/entitydetective mob profile minecraft:zombie 200
+/entitydetective entity profile minecraft:zombie
+/entitydetective entity profile minecraft:zombie 200
+/entitydetective entity profile minecraft:item_frame
 ```
 
 Output after the sample window:
@@ -194,7 +195,7 @@ cd Entity-Detective
 
 ## Credits
 
-The entity tick profiling feature (`mob profile`) uses a mixin approach adapted from [fabric-carpet](https://github.com/gnembon/fabric-carpet) by gnembon and contributors, specifically `CarpetProfiler` and `Level_tickMixin`. fabric-carpet is licensed under LGPL-3.0.
+The entity tick profiling feature (`entity profile`) uses a mixin approach adapted from [fabric-carpet](https://github.com/gnembon/fabric-carpet) by gnembon and contributors, specifically `CarpetProfiler` and `Level_tickMixin`. fabric-carpet is licensed under LGPL-3.0.
 
 ---
 
