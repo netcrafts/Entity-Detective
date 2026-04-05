@@ -98,8 +98,15 @@ Find which chunks contain a specific item entity type, sorted by concentration. 
 
 ```
 /entitydetective item locate minecraft:cobblestone
+/entitydetective item locate minecraft:cobblestone --lazy-only
+/entitydetective item locate minecraft:cobblestone --lazy-only --world overworld
 /entitydetective item locate minecraft:cobblestone --world overworld
 ```
+
+| Flag | Description |
+|------|-------------|
+| `--lazy-only` | Only show items in lazy chunks (no player nearby). Useful for finding accumulated drops far from spawn. |
+| `--world <dim>` | Limit search to a specific dimension. |
 
 ---
 

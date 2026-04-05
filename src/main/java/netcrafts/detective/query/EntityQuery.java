@@ -135,9 +135,11 @@ public class EntityQuery {
     /**
      * Finds all item entities in the given dimension matching the given item ID,
      * grouped by chunk, sorted descending by entity count per chunk.
-     * Used for /entitydetective item_locate.
+     * Used for /entitydetective item locate.
+     *
+     * @param lazyOnly if true, only include items in lazy (non-block-ticking) chunks
      */
-    public static List<QueryResult> findItemsByType(ServerLevel world, Identifier itemId) {
+    public static List<QueryResult> findItemsByType(ServerLevel world, Identifier itemId, boolean lazyOnly) {
         Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
         ArrayList<ItemEntity> matched = new ArrayList<>();
         world.getEntities(
@@ -150,6 +152,7 @@ public class EntityQuery {
         );
 
         for (ItemEntity ie : matched) {
+            if (lazyOnly && !ChunkStatusUtil.isLazy(world, ie)) continue;
             ChunkPos pos = ChunkPos.containing(ie.blockPosition());
             byChunk.computeIfAbsent(pos, k -> new ArrayList<>()).add(ie);
         }

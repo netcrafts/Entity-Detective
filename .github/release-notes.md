@@ -4,5 +4,4 @@
   One line per feature or fix. Keep entries short and user-facing.
 -->
 
-- **Breaking:** Commands restructured under `mob` and `item` namespaces for consistency — `/entitydetective <category>` → `/entitydetective mob <category>`, `/entitydetective entity <type>` → `/entitydetective mob locate <type>`, `/entitydetective mobcap` → `/entitydetective mob cap`, `/entitydetective item_summary` → `/entitydetective item`, `/entitydetective item_locate <id>` → `/entitydetective item locate <id>`
-- Removed `misc` mob category from `mob` commands — it is a Minecraft engine catch-all (projectiles, XP orbs, falling blocks) with no mob cap; item entities are handled by `item` commands
+- Added `--lazy-only` flag to `item locate` — filters results to items in lazy (non-ticking) chunks, useful for tracking accumulated drops in unmanned farms or far-from-spawn areas

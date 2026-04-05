@@ -230,11 +230,20 @@ public class LocateCommand {
                     .then(Commands.literal("locate")
                         .then(Commands.argument("itemType", IdentifierArgument.id())
                             .suggests(ITEM_TYPE_SUGGESTIONS)
-                            .executes(ctx -> executeItemLocate(ctx, null))
+                            .executes(ctx -> executeItemLocate(ctx, false, null))
+                            .then(Commands.literal("--lazy-only")
+                                .executes(ctx -> executeItemLocate(ctx, true, null))
+                                .then(Commands.literal("--world")
+                                    .then(Commands.argument("dim", StringArgumentType.word())
+                                        .suggests(DIM_SUGGESTIONS)
+                                        .executes(ctx -> executeItemLocate(ctx, true, StringArgumentType.getString(ctx, "dim")))
+                                    )
+                                )
+                            )
                             .then(Commands.literal("--world")
                                 .then(Commands.argument("dim", StringArgumentType.word())
                                     .suggests(DIM_SUGGESTIONS)
-                                    .executes(ctx -> executeItemLocate(ctx, StringArgumentType.getString(ctx, "dim")))
+                                    .executes(ctx -> executeItemLocate(ctx, false, StringArgumentType.getString(ctx, "dim")))
                                 )
                             )
                         )
@@ -401,7 +410,7 @@ public class LocateCommand {
         }
     }
 
-    private static int executeItemLocate(CommandContext<CommandSourceStack> ctx, @Nullable String dimArg) {
+    private static int executeItemLocate(CommandContext<CommandSourceStack> ctx, boolean lazyOnly, @Nullable String dimArg) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
         try {
@@ -428,8 +437,8 @@ public class LocateCommand {
 
             for (ServerLevel world : worlds) {
                 String dimName = ResultFormatter.dimensionName(world.dimension());
-                var results = EntityQuery.findItemsByType(world, id);
-                ResultFormatter.sendLocateResults(source, results, label, dimName, false, false);
+                var results = EntityQuery.findItemsByType(world, id, lazyOnly);
+                ResultFormatter.sendLocateResults(source, results, label, dimName, lazyOnly, false);
             }
             return 1;
         } catch (Exception e) {
