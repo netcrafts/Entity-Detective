@@ -14,19 +14,24 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 
 ```
 /entitydetective
-├── mob <category>              — List entities by mob category, grouped by chunk
+├── mob <category>              — Type-count summary per dimension
 │   │   (monster | creature | ambient | axolotls | water_creature | water_ambient)
-│   │   Flags: --lazy-only, --world, --summary, --persistent, --debug
+│   │   Flags: --lazy-only, --world, --persistent
+│   │   --lazy-only: individual entity list sorted by distance from spawn
 │   └── cap                    — Live mob cap: current vs max, colour-coded saturation
 │
-├── entity
+├── entity                      — Summary of all entity types by count, per dimension
+│   │   Flags: --lazy-only, --persistent, --world
+│   │   --lazy-only: individual entity list sorted by distance from spawn
+│   │   --persistent: show only persistent mobs
 │   ├── locate <type>          — Locate any entity type (tab-complete from live world)
 │   │       Flags: --lazy-only, --world, --debug
 │   └── profile <type> [ticks] — MSPT profiling of any entity type over a tick window
 │           Default: 100 ticks (5 s) | Min: 20 | Max: 6000
 │
-└── item                       — Dropped item summary grouped by item type
-    │   Flags: --world
+└── item                       — Dropped item summary per dimension
+    │   Flags: --lazy-only, --world
+    │   --lazy-only: individual item entity list sorted by distance from spawn
     └── locate <item_id>       — Find chunks with a specific dropped item type
             Flags: --lazy-only, --world
 ```
@@ -46,7 +51,7 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 ## Commands
 
 ### `/entitydetective mob <category>`
-Find all entities of a mob category, grouped by chunk, across **all loaded dimensions** by default.
+Show a per-dimension type-count summary for entities in a mob category.
 
 ```
 /entitydetective mob monster
@@ -57,25 +62,76 @@ Find all entities of a mob category, grouped by chunk, across **all loaded dimen
 /entitydetective mob water_ambient
 ```
 
+Output per dimension:
+```
+-- monster [overworld]: 128 entities --
+  minecraft:zombie                                       54
+  minecraft:skeleton                                     38
+  minecraft:creeper                                      21
+  ...
+Total: 128 entities across 8 types
+```
+
 **Flags:**
 | Flag | Description |
 |------|-------------|
-| `--lazy-only` | Only show entities with no player within 128 blocks (won't despawn naturally) |
+| `--lazy-only` | List every individual entity in lazy chunks (no player within 128 blocks), sorted closest to spawn first. Each line is clickable to `/tp`. |
 | `--world <dim>` | Scope to a specific dimension: `overworld`, `nether`, or `end` |
-| `--summary` | One-line summary per dimension instead of full chunk list |
-| `--persistent` | Show only persistent mobs (name-tagged, holding a picked-up item, leashed, riding a vehicle) |
-| `--debug` | Show each entity individually with exact coordinates, type, and persistence reason (clickable to `/tp`) |
+| `--persistent` | List every persistent mob (name-tagged, holding a picked-up item, leashed, riding a vehicle) individually with exact locations, sorted by distance from spawn. |
 
 **Examples:**
 ```
+/entitydetective mob monster
+/entitydetective mob monster --world overworld
 /entitydetective mob monster --lazy-only
 /entitydetective mob monster --lazy-only --world overworld
-/entitydetective mob creature --world nether --summary
-/entitydetective mob monster --persistent --debug
-/entitydetective mob monster --debug
+/entitydetective mob monster --lazy-only --persistent
+/entitydetective mob monster --persistent
 ```
 
+**`--lazy-only` output:**
+```
+-- lazy monster [overworld]: 45 entities --
+  [−312, 64, 188]  —  minecraft:zombie
+  [−314, 64, 190]  —  minecraft:zombie
+  [904, 48, −233]  —  minecraft:creeper "Bob"
+  ...
+Total: 45 entities
+```
+Each line is clickable and pastes a `/tp` command to that entity's exact location.
+
 > **Note:** The `misc` category is intentionally excluded — it is a Minecraft engine catch-all for non-mob entities (projectiles, XP orbs, falling blocks, etc.) with no mob cap. Item entities are handled by `/entitydetective item`. To locate or profile any specific entity type (including non-mobs), use `/entitydetective entity`.
+
+---
+
+### `/entitydetective entity`
+List all loaded entity types sorted by count, one block per dimension.
+
+```
+/entitydetective entity
+/entitydetective entity --world overworld
+/entitydetective entity --world nether
+/entitydetective entity --world end
+/entitydetective entity --persistent
+/entitydetective entity --lazy-only
+/entitydetective entity --lazy-only --world overworld
+/entitydetective entity --lazy-only --persistent
+```
+
+Default output per dimension:
+```
+-- Entity Types [overworld]: 847 entities --
+  minecraft:zombie                                      312
+  minecraft:skeleton                                    201
+  minecraft:item_frame                                   98
+  ...
+Total: 847 entities across 12 types
+```
+
+| Flag | Description |
+|------|-------------|
+| `--persistent` | List every persistent mob individually with exact locations and clickable `/tp` links, sorted by distance from spawn. |
+| `--lazy-only` | Lists every lazy entity individually sorted by distance from spawn. Combine with `--persistent` to find lazy persistent mobs across all types. |
 
 ---
 
@@ -125,17 +181,21 @@ Show the live mob cap for your **current dimension** — current count vs. maxim
 ---
 
 ### `/entitydetective item`
-List all loaded **item entities** (dropped items on the ground) grouped by item type across all dimensions. Useful for finding item overflow from farms or mob drops.
+List all loaded **item entities** (dropped items on the ground) grouped by item type, one block per dimension. Useful for finding item overflow from farms or mob drops.
 
 ```
 /entitydetective item
 /entitydetective item --world overworld
+/entitydetective item --lazy-only
+/entitydetective item --lazy-only --world overworld
 ```
 
-Output shows entity count, total item quantity, and colour-coded severity per type:
+Default output per dimension shows entity count, total item quantity, and colour-coded severity per type:
 - **Green** — < 100 items
 - **Yellow** — 100–999 items
 - **Red** — ≥ 1 000 items
+
+`--lazy-only` lists every lazy item entity individually (same flat format as `mob --lazy-only`), sorted by distance from spawn.
 
 ---
 
@@ -158,7 +218,7 @@ Find which chunks contain a specific item entity type, sorted by concentration. 
 
 ## Debug flag
 
-Adding `--debug` to `mob` or `entity locate` expands each chunk line to list every individual entity with:
+Adding `--debug` to `entity locate` expands each chunk line to list every individual entity with:
 - Registry type (e.g. `minecraft:piglin_brute`)
 - Custom name if name-tagged
 - Exact XYZ coordinates
@@ -166,11 +226,13 @@ Adding `--debug` to `mob` or `entity locate` expands each chunk line to list eve
 - Click the line to paste a `/tp` command directly to that entity
 
 ```
--- monster [nether]: 9 entities in 1 chunks --
+-- minecraft:bee [overworld] (lazy only): 9 entities in 1 chunks --
   [6, 11] — 9 entities
-    minecraft:piglin_brute  @ 103.5, 45.0, 182.3  (holding item)
-    minecraft:piglin_brute  "Guard"  @ 101.0, 44.0, 184.7  (name tagged)
+    [103, 45, 182]  —  minecraft:bee
+    [101, 44, 184]  —  minecraft:bee
 ```
+
+> **Tip:** For a full list of lazy entities from any mob category with clickable `/tp` links, use `--lazy-only` on the bare `mob`, `entity`, or `item` command instead of `--debug`.
 
 ---
 

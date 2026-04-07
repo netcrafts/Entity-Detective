@@ -30,6 +30,7 @@ import netcrafts.detective.output.ResultFormatter;
 import netcrafts.detective.query.EntityProfiler;
 import netcrafts.detective.query.EntityQuery;
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
+import netcrafts.detective.query.EntityQuery.EntityTypeCount;
 import netcrafts.detective.query.MobCapInfo;
 
 import org.jetbrains.annotations.Nullable;
@@ -136,55 +137,70 @@ public class LocateCommand {
                     // mob <category> [flags]
                     .then(Commands.argument("category", StringArgumentType.word())
                         .suggests(CATEGORY_SUGGESTIONS)
-                        .executes(ctx -> executeLocate(ctx, false, false, null, false, false))
-                        .then(Commands.literal("--debug")
-                            .executes(ctx -> executeLocate(ctx, false, false, null, false, true))
-                        )
+                        .executes(ctx -> executeMobSummary(ctx, null, false))
                         .then(Commands.literal("--lazy-only")
-                            .executes(ctx -> executeLocate(ctx, true, false, null, false, false))
-                            .then(Commands.literal("--debug")
-                                .executes(ctx -> executeLocate(ctx, true, false, null, false, true))
-                            )
+                            .executes(ctx -> executeLazyMobList(ctx, null, false))
                             .then(Commands.literal("--world")
                                 .then(Commands.argument("dim", StringArgumentType.word())
                                     .suggests(DIM_SUGGESTIONS)
-                                    .executes(ctx -> executeLocate(ctx, true, false, StringArgumentType.getString(ctx, "dim"), false, false))
-                                    .then(Commands.literal("--debug")
-                                        .executes(ctx -> executeLocate(ctx, true, false, StringArgumentType.getString(ctx, "dim"), false, true))
-                                    )
+                                    .executes(ctx -> executeLazyMobList(ctx, StringArgumentType.getString(ctx, "dim"), false))
                                 )
                             )
-                        )
-                        .then(Commands.literal("--summary")
-                            .executes(ctx -> executeLocate(ctx, false, true, null, false, false))
-                            .then(Commands.literal("--world")
-                                .then(Commands.argument("dim", StringArgumentType.word())
-                                    .suggests(DIM_SUGGESTIONS)
-                                    .executes(ctx -> executeLocate(ctx, false, true, StringArgumentType.getString(ctx, "dim"), false, false))
-                                )
+                            .then(Commands.literal("--persistent")
+                                .executes(ctx -> executeLazyMobList(ctx, null, true))
                             )
                         )
                         .then(Commands.literal("--persistent")
-                            .executes(ctx -> executeLocate(ctx, false, false, null, true, false))
-                            .then(Commands.literal("--debug")
-                                .executes(ctx -> executeLocate(ctx, false, false, null, true, true))
+                            .executes(ctx -> executePersistentMobList(ctx, null))
+                            .then(Commands.literal("--world")
+                                .then(Commands.argument("dim", StringArgumentType.word())
+                                    .suggests(DIM_SUGGESTIONS)
+                                    .executes(ctx -> executePersistentMobList(ctx, StringArgumentType.getString(ctx, "dim")))
+                                )
                             )
                         )
                         .then(Commands.literal("--world")
                             .then(Commands.argument("dim", StringArgumentType.word())
                                 .suggests(DIM_SUGGESTIONS)
-                                .executes(ctx -> executeLocate(ctx, false, false, StringArgumentType.getString(ctx, "dim"), false, false))
-                                .then(Commands.literal("--debug")
-                                    .executes(ctx -> executeLocate(ctx, false, false, StringArgumentType.getString(ctx, "dim"), false, true))
-                                )
+                                .executes(ctx -> executeMobSummary(ctx, StringArgumentType.getString(ctx, "dim"), false))
                             )
                         )
                     )
                 )
 
+                // /entitydetective entity              — summary of all entity types by count
+                // /entitydetective entity --lazy-only  — flat lazy entity list
                 // /entitydetective entity locate <type> [--lazy-only] [--world <dim>] [--debug]
                 // /entitydetective entity profile <type> [<ticks>]
                 .then(Commands.literal("entity")
+                    .executes(ctx -> executeEntitySummary(ctx, null, false))
+                    .then(Commands.literal("--world")
+                        .then(Commands.argument("dim", StringArgumentType.word())
+                            .suggests(DIM_SUGGESTIONS)
+                            .executes(ctx -> executeEntitySummary(ctx, StringArgumentType.getString(ctx, "dim"), false))
+                        )
+                    )
+                    .then(Commands.literal("--persistent")
+                        .executes(ctx -> executePersistentEntityList(ctx, null))
+                        .then(Commands.literal("--world")
+                            .then(Commands.argument("dim", StringArgumentType.word())
+                                .suggests(DIM_SUGGESTIONS)
+                                .executes(ctx -> executePersistentEntityList(ctx, StringArgumentType.getString(ctx, "dim")))
+                            )
+                        )
+                    )
+                    .then(Commands.literal("--lazy-only")
+                        .executes(ctx -> executeLazyEntityList(ctx, null, false))
+                        .then(Commands.literal("--world")
+                            .then(Commands.argument("dim", StringArgumentType.word())
+                                .suggests(DIM_SUGGESTIONS)
+                                .executes(ctx -> executeLazyEntityList(ctx, StringArgumentType.getString(ctx, "dim"), false))
+                            )
+                        )
+                        .then(Commands.literal("--persistent")
+                            .executes(ctx -> executeLazyEntityList(ctx, null, true))
+                        )
+                    )
 
                     // entity locate <entityType> [flags]
                     .then(Commands.literal("locate")
@@ -244,6 +260,15 @@ public class LocateCommand {
                             .executes(ctx -> executeItemSummary(ctx, StringArgumentType.getString(ctx, "dim")))
                         )
                     )
+                    .then(Commands.literal("--lazy-only")
+                        .executes(ctx -> executeLazyItemList(ctx, null))
+                        .then(Commands.literal("--world")
+                            .then(Commands.argument("dim", StringArgumentType.word())
+                                .suggests(DIM_SUGGESTIONS)
+                                .executes(ctx -> executeLazyItemList(ctx, StringArgumentType.getString(ctx, "dim")))
+                            )
+                        )
+                    )
                     .then(Commands.literal("locate")
                         .then(Commands.argument("itemType", IdentifierArgument.id())
                             .suggests(ITEM_TYPE_SUGGESTIONS)
@@ -283,6 +308,169 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in mobcap command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeMobSummary(
+            CommandContext<CommandSourceStack> ctx,
+            @Nullable String dimArg,
+            boolean persistent) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            String categoryName = StringArgumentType.getString(ctx, "category");
+            MobCategory category = Arrays.stream(MobCategory.values())
+                    .filter(c -> c.getName().equals(categoryName))
+                    .findFirst()
+                    .orElse(null);
+            if (category == null || category == MobCategory.MISC) {
+                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                        + ". Valid: " + String.join(", ", CATEGORIES)));
+                return 0;
+            }
+
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
+            } else {
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
+            }
+
+            for (ServerLevel world : worlds) {
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                var counts = EntityQuery.countEntitiesByCategory(world, category, persistent);
+                ResultFormatter.sendMobSummary(source, counts, categoryName, dimName);
+            }
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in mob summary command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeLazyMobList(
+            CommandContext<CommandSourceStack> ctx,
+            @Nullable String dimArg,
+            boolean persistent) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            String categoryName = StringArgumentType.getString(ctx, "category");
+            MobCategory category = Arrays.stream(MobCategory.values())
+                    .filter(c -> c.getName().equals(categoryName))
+                    .findFirst()
+                    .orElse(null);
+            if (category == null || category == MobCategory.MISC) {
+                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                        + ". Valid: " + String.join(", ", CATEGORIES)));
+                return 0;
+            }
+
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
+            } else {
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
+            }
+
+            for (ServerLevel world : worlds) {
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                List<Entity> entities = EntityQuery.findLazyByCategory(world, category, persistent);
+                ResultFormatter.sendLazyEntityList(source, entities, categoryName, dimName);
+            }
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in lazy mob list command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executePersistentMobList(
+            CommandContext<CommandSourceStack> ctx,
+            @Nullable String dimArg) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            String categoryName = StringArgumentType.getString(ctx, "category");
+            MobCategory category = Arrays.stream(MobCategory.values())
+                    .filter(c -> c.getName().equals(categoryName))
+                    .findFirst()
+                    .orElse(null);
+            if (category == null || category == MobCategory.MISC) {
+                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                        + ". Valid: " + String.join(", ", CATEGORIES)));
+                return 0;
+            }
+
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
+            } else {
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
+            }
+
+            for (ServerLevel world : worlds) {
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                List<Entity> entities = EntityQuery.findPersistentByCategory(world, category);
+                ResultFormatter.sendPersistentEntityList(source, entities, categoryName, dimName);
+            }
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in persistent mob list command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executePersistentEntityList(
+            CommandContext<CommandSourceStack> ctx,
+            @Nullable String dimArg) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
+            } else {
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
+            }
+
+            for (ServerLevel world : worlds) {
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                List<Entity> entities = EntityQuery.findPersistentEntities(world);
+                ResultFormatter.sendPersistentEntityList(source, entities, "entities", dimName);
+            }
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in persistent entity list command", e);
             source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
             return 0;
         }
@@ -386,6 +574,101 @@ public class LocateCommand {
         }
     }
 
+    private static int executeLazyEntityList(
+            CommandContext<CommandSourceStack> ctx,
+            @Nullable String dimArg,
+            boolean persistent) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
+            } else {
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
+            }
+
+            for (ServerLevel world : worlds) {
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                List<Entity> entities = EntityQuery.findLazyEntities(world, persistent);
+                ResultFormatter.sendLazyEntityList(source, entities, "entity", dimName);
+            }
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in lazy entity list command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeEntitySummary(CommandContext<CommandSourceStack> ctx, @Nullable String dimArg, boolean persistent) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
+            } else {
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
+            }
+
+            for (ServerLevel world : worlds) {
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                List<EntityTypeCount> counts = EntityQuery.countEntitiesByType(world, persistent);
+                ResultFormatter.sendEntitySummary(source, counts, dimName);
+            }
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in entity summary command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeLazyItemList(
+            CommandContext<CommandSourceStack> ctx,
+            @Nullable String dimArg) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            List<ServerLevel> worlds;
+            if (dimArg == null) {
+                worlds = new java.util.ArrayList<>();
+                source.getServer().getAllLevels().forEach(worlds::add);
+            } else {
+                ServerLevel world = resolveWorld(source, dimArg);
+                if (world == null) {
+                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    return 0;
+                }
+                worlds = List.of(world);
+            }
+
+            for (ServerLevel world : worlds) {
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                List<Entity> entities = EntityQuery.findLazyItemEntities(world);
+                ResultFormatter.sendLazyEntityList(source, entities, "item", dimName);
+            }
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in lazy item list command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
     private static int executeItemSummary(CommandContext<CommandSourceStack> ctx, @Nullable String dimArg) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
@@ -403,22 +686,11 @@ public class LocateCommand {
                 worlds = List.of(world);
             }
 
-            // Aggregate counts across all targeted dimensions
-            java.util.Map<Identifier, long[]> combined = new java.util.LinkedHashMap<>();
             for (ServerLevel world : worlds) {
-                for (ItemTypeCount row : EntityQuery.countItemsByType(world)) {
-                    long[] acc = combined.computeIfAbsent(row.itemId(), k -> new long[]{0L, 0L});
-                    acc[0] += row.entityCount();
-                    acc[1] += row.itemTotal();
-                }
+                String dimName = ResultFormatter.dimensionName(world.dimension());
+                List<ItemTypeCount> counts = EntityQuery.countItemsByType(world);
+                ResultFormatter.sendItemSummary(source, counts, dimName);
             }
-            List<ItemTypeCount> merged = combined.entrySet().stream()
-                    .map(e -> new ItemTypeCount(e.getKey(), e.getValue()[0], e.getValue()[1]))
-                    .sorted(java.util.Comparator.<ItemTypeCount>comparingLong(r -> -r.itemTotal()))
-                    .toList();
-
-            String dimName = dimArg == null ? "all dimensions" : dimArg;
-            ResultFormatter.sendItemSummary(source, merged, dimName);
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in item_summary command", e);

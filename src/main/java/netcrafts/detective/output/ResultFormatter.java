@@ -19,6 +19,7 @@ import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
 
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
+import netcrafts.detective.query.EntityQuery.EntityTypeCount;
 import netcrafts.detective.query.EntityQuery.QueryResult;
 import netcrafts.detective.query.MobCapInfo.CategoryInfo;
 
@@ -142,13 +143,19 @@ public class ResultFormatter {
         // 5.5.2 / 5.5.8 — getKey() can return null for unregistered modded entity types
         @Nullable Identifier typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         String type = typeKey != null ? typeKey.toString() : "unknown:" + entity.getType().getDescriptionId();
-        String name = entity.hasCustomName() ? " \"" + entity.getCustomName().getString() + "\"" : "";
+        String name   = entity.hasCustomName() ? " \"" + entity.getCustomName().getString() + "\"" : "";
         String reason = persistenceReason(entity);
-        String coords = String.format("%.1f, %.1f, %.1f", entity.getX(), entity.getY(), entity.getZ());
+        String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
         String tpCommand = String.format("/tp @s %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
-        MutableComponent line = Component.literal("    " + type + name + "  @ " + coords + "  (" + reason + ")")
-                .withStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)
-                        .withClickEvent(new ClickEvent.SuggestCommand(tpCommand)));
+        MutableComponent line = Component.literal("    ")
+                .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCommand)));
+        line.append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
+        line.append(Component.literal("  —  ").withStyle(ChatFormatting.WHITE));
+        line.append(Component.literal(type).withStyle(ChatFormatting.GREEN));
+        if (!name.isEmpty()) {
+            line.append(Component.literal(name).withStyle(ChatFormatting.WHITE));
+        }
+        line.append(Component.literal("  (" + reason + ")").withStyle(ChatFormatting.GRAY));
         return line;
     }
 
@@ -183,6 +190,39 @@ public class ResultFormatter {
     }
 
     // -------------------------------------------------------------------------
+    // Entity type summary display
+    // -------------------------------------------------------------------------
+
+    public static void sendEntitySummary(
+            CommandSourceStack source,
+            List<EntityTypeCount> counts,
+            String dimName) {
+
+        long total = counts.stream().mapToLong(EntityTypeCount::count).sum();
+
+        if (total == 0) {
+            source.sendSuccess(() -> Component.literal(
+                    "No entities found in " + dimName + ".")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "-- Entity Types [" + dimName + "]: " + total + " entities --")
+                .withStyle(ChatFormatting.GOLD), false);
+
+        for (EntityTypeCount row : counts) {
+            MutableComponent rowLine = Component.literal(String.format("  %5d  ", row.count())).withStyle(ChatFormatting.WHITE);
+            rowLine.append(Component.literal(row.typeId().toString()).withStyle(ChatFormatting.GREEN));
+            source.sendSuccess(() -> rowLine, false);
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "Total: " + total + " entities across " + counts.size() + " types")
+                .withStyle(ChatFormatting.GRAY), false);
+    }
+
+    // -------------------------------------------------------------------------
     // Item entity display
     // -------------------------------------------------------------------------
 
@@ -211,9 +251,9 @@ public class ResultFormatter {
             ChatFormatting color = row.itemTotal() < 100 ? ChatFormatting.GREEN
                     : row.itemTotal() < 1000 ? ChatFormatting.YELLOW
                     : ChatFormatting.RED;
-            String line = String.format("  %-40s %5d items  (%d entities)",
-                    row.itemId().toString(), row.itemTotal(), row.entityCount());
-            source.sendSuccess(() -> Component.literal(line).withStyle(color), false);
+            MutableComponent rowLine = Component.literal(String.format("  %5d items  (%d entities)  ", row.itemTotal(), row.entityCount())).withStyle(color);
+            rowLine.append(Component.literal(row.itemId().toString()).withStyle(ChatFormatting.GREEN));
+            source.sendSuccess(() -> rowLine, false);
         }
 
         source.sendSuccess(() -> Component.literal(
@@ -286,6 +326,119 @@ public class ResultFormatter {
             source.sendSuccess(() -> Component.literal("  Dimension: " + dimName)
                     .withStyle(ChatFormatting.GRAY), false);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Mob category type-count summary
+    // -------------------------------------------------------------------------
+
+    public static void sendMobSummary(
+            CommandSourceStack source,
+            List<EntityTypeCount> counts,
+            String category,
+            String dimName) {
+
+        long total = counts.stream().mapToLong(EntityTypeCount::count).sum();
+
+        if (total == 0) {
+            source.sendSuccess(() -> Component.literal(
+                    "No " + category + " entities found in " + dimName + ".")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "-- " + category + " [" + dimName + "]: " + total + " entities --")
+                .withStyle(ChatFormatting.GOLD), false);
+
+        for (EntityTypeCount row : counts) {
+            MutableComponent rowLine = Component.literal(String.format("  %5d  ", row.count())).withStyle(ChatFormatting.WHITE);
+            rowLine.append(Component.literal(row.typeId().toString()).withStyle(ChatFormatting.GREEN));
+            source.sendSuccess(() -> rowLine, false);
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "Total: " + total + " entities across " + counts.size() + " types")
+                .withStyle(ChatFormatting.GRAY), false);
+    }
+
+    // -------------------------------------------------------------------------
+    // Lazy entity flat list (--lazy-only on bare mob / entity / item)
+    // -------------------------------------------------------------------------
+
+    public static void sendLazyEntityList(
+            CommandSourceStack source,
+            List<Entity> entities,
+            String label,
+            String dimName) {
+
+        if (entities.isEmpty()) {
+            source.sendSuccess(() -> Component.literal(
+                    "No lazy " + label + " entities found in " + dimName + ".")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "-- lazy " + label + " [" + dimName + "]: " + entities.size() + " entities --")
+                .withStyle(ChatFormatting.GOLD), false);
+
+        for (Entity entity : entities) {
+            source.sendSuccess(() -> formatLazyEntityLine(entity), false);
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "Total: " + entities.size() + " entities")
+                .withStyle(ChatFormatting.GRAY), false);
+    }
+
+    public static void sendPersistentEntityList(
+            CommandSourceStack source,
+            List<Entity> entities,
+            String label,
+            String dimName) {
+
+        if (entities.isEmpty()) {
+            source.sendSuccess(() -> Component.literal(
+                    "No persistent " + label + " entities found in " + dimName + ".")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "-- persistent " + label + " [" + dimName + "]: " + entities.size() + " entities --")
+                .withStyle(ChatFormatting.GOLD), false);
+
+        for (Entity entity : entities) {
+            source.sendSuccess(() -> formatLazyEntityLine(entity), false);
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "Total: " + entities.size() + " entities")
+                .withStyle(ChatFormatting.GRAY), false);
+    }
+
+    private static MutableComponent formatLazyEntityLine(Entity entity) {
+        String type;
+        if (entity instanceof net.minecraft.world.entity.item.ItemEntity ie) {
+            @Nullable Identifier itemKey = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
+            type = itemKey != null ? itemKey.toString() : "unknown:item";
+        } else {
+            @Nullable Identifier typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            type = typeKey != null ? typeKey.toString() : "unknown:" + entity.getType().getDescriptionId();
+        }
+        String name   = entity.hasCustomName() ? " \"" + entity.getCustomName().getString() + "\"" : "";
+        String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
+        String tpCmd  = String.format("/tp @s %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
+        MutableComponent line = Component.literal("  ")
+                .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCmd)));
+        line.append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
+        line.append(Component.literal("  —  ").withStyle(ChatFormatting.WHITE));
+        line.append(Component.literal(type).withStyle(ChatFormatting.GREEN));
+        if (!name.isEmpty()) {
+            line.append(Component.literal(name).withStyle(ChatFormatting.WHITE));
+        }
+        return line;
     }
 
     public static String dimensionName(net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> key) {

@@ -34,6 +34,14 @@ public class EntityQuery {
     public record ItemTypeCount(Identifier itemId, long entityCount, long itemTotal) {}
 
     /**
+     * Summary row for entity_summary: one entry per distinct entity type.
+     *
+     * @param typeId registry key, e.g. minecraft:zombie
+     * @param count  number of loaded entities of this type
+     */
+    public record EntityTypeCount(Identifier typeId, long count) {}
+
+    /**
      * Finds all entities of the given MobCategory in the given dimension.
      */
     public static List<QueryResult> findEntities(
@@ -107,6 +115,45 @@ public class EntityQuery {
     }
 
     /**
+     * Counts all loaded entities in the given dimension, grouped by entity type.
+     * Results are sorted descending by count.
+     * Entities whose registry key is null (unregistered modded entities) are skipped.
+     */
+    public static List<EntityTypeCount> countEntitiesByType(ServerLevel world) {
+        return countEntitiesByType(world, false);
+    }
+
+    /**
+     * Counts entities in the given dimension, grouped by entity type.
+     * If persistentOnly is true, only counts persistent mobs (name-tagged, holding item, leashed, riding).
+     */
+    public static List<EntityTypeCount> countEntitiesByType(ServerLevel world, boolean persistentOnly) {
+        ArrayList<Entity> all = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            if (persistentOnly) {
+                return entity instanceof Mob mob
+                        && (mob.isPersistenceRequired()
+                            || mob.requiresCustomPersistence()
+                            || mob.isPassenger()
+                            || mob.isLeashed());
+            }
+            return true;
+        }, all);
+
+        Map<Identifier, long[]> counts = new LinkedHashMap<>();
+        for (Entity entity : all) {
+            @Nullable Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            if (key == null) continue;
+            counts.computeIfAbsent(key, k -> new long[]{0L})[0] += 1;
+        }
+
+        return counts.entrySet().stream()
+                .map(e -> new EntityTypeCount(e.getKey(), e.getValue()[0]))
+                .sorted(Comparator.<EntityTypeCount>comparingLong(r -> -r.count()))
+                .toList();
+    }
+
+    /**
      * Counts all loaded item entities in the given dimension, grouped by item type.
      * Each row contains both entity count and total item count (stack × quantity).
      * Results are sorted descending by item total.
@@ -161,6 +208,135 @@ public class EntityQuery {
                 .map(e -> new QueryResult(e.getKey(), e.getValue()))
                 .sorted(Comparator.comparingInt(r -> -r.entities().size()))
                 .toList();
+    }
+
+    /**
+     * Counts all entities of the given MobCategory in the given dimension, grouped by entity type.
+     * If persistent is true, only counts persistent mobs; otherwise excludes them.
+     */
+    public static List<EntityTypeCount> countEntitiesByCategory(
+            ServerLevel world, MobCategory category, boolean persistent) {
+        ArrayList<Entity> all = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            if (entity.getType().getCategory() != category) return false;
+            boolean isPersistent = entity instanceof Mob mob
+                    && (mob.isPersistenceRequired()
+                        || mob.requiresCustomPersistence()
+                        || mob.isPassenger()
+                        || mob.isLeashed());
+            return persistent == isPersistent;
+        }, all);
+
+        Map<Identifier, long[]> counts = new LinkedHashMap<>();
+        for (Entity entity : all) {
+            @Nullable Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            if (key == null) continue;
+            counts.computeIfAbsent(key, k -> new long[]{0L})[0] += 1;
+        }
+
+        return counts.entrySet().stream()
+                .map(e -> new EntityTypeCount(e.getKey(), e.getValue()[0]))
+                .sorted(Comparator.<EntityTypeCount>comparingLong(r -> -r.count()))
+                .toList();
+    }
+
+    /**
+     * Returns all lazy entities of the given MobCategory, sorted by squared XZ distance
+     * from spawn (0, 0). If persistent is true, also applies persistent filter.
+     */
+    public static List<Entity> findLazyByCategory(
+            ServerLevel world, MobCategory category, boolean persistent) {
+        ArrayList<Entity> matched = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            if (entity.getType().getCategory() != category) return false;
+            if (!ChunkStatusUtil.isLazy(world, entity)) return false;
+            if (!persistent) return true;
+            return entity instanceof Mob mob
+                    && (mob.isPersistenceRequired()
+                        || mob.requiresCustomPersistence()
+                        || mob.isPassenger()
+                        || mob.isLeashed());
+        }, matched);
+        matched.sort(Comparator.comparingDouble(e -> e.getX() * e.getX() + e.getZ() * e.getZ()));
+        return matched;
+    }
+
+    /**
+     * Returns all lazy entities of any type in the given dimension, sorted by squared XZ
+     * distance from spawn (0, 0).
+     */
+    public static List<Entity> findLazyEntities(ServerLevel world) {
+        return findLazyEntities(world, false);
+    }
+
+    /**
+     * Returns lazy entities in the given dimension, sorted by squared XZ distance from spawn.
+     * If persistentOnly is true, only returns persistent mobs.
+     */
+    public static List<Entity> findLazyEntities(ServerLevel world, boolean persistentOnly) {
+        ArrayList<Entity> matched = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            if (!ChunkStatusUtil.isLazy(world, entity)) return false;
+            if (persistentOnly) {
+                return entity instanceof Mob mob
+                        && (mob.isPersistenceRequired()
+                            || mob.requiresCustomPersistence()
+                            || mob.isPassenger()
+                            || mob.isLeashed());
+            }
+            return true;
+        }, matched);
+        matched.sort(Comparator.comparingDouble(e -> e.getX() * e.getX() + e.getZ() * e.getZ()));
+        return matched;
+    }
+
+    /**
+     * Returns all persistent entities of the given MobCategory across all loaded chunks,
+     * sorted by squared XZ distance from spawn (0, 0).
+     */
+    public static List<Entity> findPersistentByCategory(
+            ServerLevel world, MobCategory category) {
+        ArrayList<Entity> matched = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            if (entity.getType().getCategory() != category) return false;
+            return entity instanceof Mob mob
+                    && (mob.isPersistenceRequired()
+                        || mob.requiresCustomPersistence()
+                        || mob.isPassenger()
+                        || mob.isLeashed());
+        }, matched);
+        matched.sort(Comparator.comparingDouble(e -> e.getX() * e.getX() + e.getZ() * e.getZ()));
+        return matched;
+    }
+
+    /**
+     * Returns all persistent entities of any type across all loaded chunks,
+     * sorted by squared XZ distance from spawn (0, 0).
+     */
+    public static List<Entity> findPersistentEntities(ServerLevel world) {
+        ArrayList<Entity> matched = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            return entity instanceof Mob mob
+                    && (mob.isPersistenceRequired()
+                        || mob.requiresCustomPersistence()
+                        || mob.isPassenger()
+                        || mob.isLeashed());
+        }, matched);
+        matched.sort(Comparator.comparingDouble(e -> e.getX() * e.getX() + e.getZ() * e.getZ()));
+        return matched;
+    }
+
+    /**
+     * Returns all lazy item entities in the given dimension, sorted by squared XZ distance
+     * from spawn (0, 0).
+     */
+    public static List<Entity> findLazyItemEntities(ServerLevel world) {
+        ArrayList<ItemEntity> all = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(ItemEntity.class),
+                ie -> ChunkStatusUtil.isLazy(world, ie), all);
+        List<Entity> result = new ArrayList<>(all);
+        result.sort(Comparator.comparingDouble(e -> e.getX() * e.getX() + e.getZ() * e.getZ()));
+        return result;
     }
 }
 
