@@ -35,7 +35,7 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 
 ## Installation
 
-1. Install [Fabric Loader](https://fabricmc.net/use/) and [Fabric API](https://modrinth.com/mod/fabric-api) for Minecraft 26.1.1  
+1. Install [Fabric Loader](https://fabricmc.net/use/) and [Fabric API](https://modrinth.com/mod/fabric-api) for Minecraft 26.1.x  
 2. Drop `entity-detective-<version>.jar` into your `mods/` folder  
 3. No client mod required — server-side only
 
@@ -221,9 +221,9 @@ By default, `/entitydetective mob <category>` **excludes** persistent mobs (they
 
 | Dependency | Version |
 |------------|---------|
-| Minecraft | 26.1.1 |
+| Minecraft | 26.1.x |
 | Fabric Loader | ≥ 0.18.6 |
-| Fabric API | ≥ 0.145.3+26.1.1 |
+| Fabric API | ≥ 0.145.3+26.1.1 (built against 26.1.1) |
 | LuckPerms | optional |
 
 ---
