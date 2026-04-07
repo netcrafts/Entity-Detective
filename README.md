@@ -4,9 +4,32 @@
 [![GitHub downloads](https://img.shields.io/github/downloads/netcrafts/Entity-Detective/total?label=Downloads&logo=github)](https://github.com/netcrafts/Entity-Detective/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admins commands to locate, audit, and diagnose entity accumulation — with a focus on **lazy-chunk mobs** that never despawn because no player is nearby.
+A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admins commands to locate, audit, diagnose, and **profile** entity accumulation.
 
 > Replaces the limited `/execute as @e[type=...]` datapack approach. Works cross-dimension, respects LuckPerms, and shows live mob cap data.
+
+---
+
+## Command overview
+
+```
+/entitydetective
+├── mob <category>              — List entities by mob category, grouped by chunk
+│   │   (monster | creature | ambient | axolotls | water_creature | water_ambient)
+│   │   Flags: --lazy-only, --world, --summary, --persistent, --debug
+│   └── cap                    — Live mob cap: current vs max, colour-coded saturation
+│
+├── entity
+│   ├── locate <type>          — Locate any entity type (tab-complete from live world)
+│   │       Flags: --lazy-only, --world, --debug
+│   └── profile <type> [ticks] — MSPT profiling of any entity type over a tick window
+│           Default: 100 ticks (5 s) | Min: 20 | Max: 6000
+│
+└── item                       — Dropped item summary grouped by item type
+    │   Flags: --world
+    └── locate <item_id>       — Find chunks with a specific dropped item type
+            Flags: --lazy-only, --world
+```
 
 ---
 
@@ -133,9 +156,9 @@ Find which chunks contain a specific item entity type, sorted by concentration. 
 
 ---
 
-## Debug output
+## Debug flag
 
-Adding `--debug` to any command expands each chunk line to list every individual entity with:
+Adding `--debug` to `mob` or `entity locate` expands each chunk line to list every individual entity with:
 - Registry type (e.g. `minecraft:piglin_brute`)
 - Custom name if name-tagged
 - Exact XYZ coordinates
@@ -151,15 +174,38 @@ Adding `--debug` to any command expands each chunk line to list every individual
 
 ---
 
-## Persistent mobs explained
+## Concepts
 
-A mob is considered **persistent** when it will not naturally despawn:
+### Lazy chunks explained
+
+The Minecraft wiki defines four chunk load types based on internal **load levels**. The relevant two for this mod are:
+
+| Load type | Level | Entity behaviour |
+|-----------|-------|-----------------|
+| **Entity Ticking** | 31 and below | Entities tick normally — they move, breed, and are evaluated for despawn |
+| **Block Ticking** | 32 | Entities are loaded in memory but **not processed** — no movement, no breeding, no despawn check |
+
+The wiki itself notes that Block Ticking chunks are *"sometimes referred to as lazy chunks"*. This is the informal term used throughout the mod.
+
+Because entities in Block Ticking chunks never receive a tick, Minecraft's despawn logic never runs on them. Mobs that wander (or are pushed) beyond player range can accumulate there indefinitely.
+
+**How this mod detects lazy chunks**
+
+Reading the engine's internal load level directly is unreliable — after a player leaves a dimension the ticket system takes time to downgrade chunks, so a chunk can still report `ENTITY_TICKING` even when no player is present. Instead, the mod mirrors Minecraft's own despawn logic: it checks whether any player is **within 128 blocks** of the entity. This is the exact threshold the game uses for mob despawn checks, making it the most accurate signal for "will this mob ever despawn naturally?"
+
+The `--lazy-only` flag filters results to only those entities that fail this 128‑block check, letting you pinpoint accumulations the server will never clean up on its own.
+
+### Persistent mobs explained
+
+A mob is considered **persistent** when it will not naturally despawn even if it does tick:
 - **Name-tagged** — named with a name tag
 - **Holding a picked-up item** — `persistenceRequired` is set when a mob equips a ground item via `setItemSlotAndDropWhenKilled`
 - **Leashed** — attached to a fence post or held by a player
 - **Riding a vehicle** — inside a boat or minecart
 
 By default, `/entitydetective mob <category>` **excludes** persistent mobs (they never contribute to mob cap pressure). Use `--persistent` to see only them.
+
+> Tip: combine `--lazy-only` and `--persistent` to find the worst offenders — mobs that are both outside player range *and* flagged to never despawn.
 
 ---
 
