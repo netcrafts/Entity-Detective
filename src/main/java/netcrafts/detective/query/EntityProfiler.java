@@ -37,7 +37,7 @@ import java.util.Map;
  * Profiling approach adapted from fabric-carpet's CarpetProfiler.
  * @see <a href="https://github.com/gnembon/fabric-carpet">fabric-carpet</a>
  */
-@SuppressWarnings("null")
+@SuppressWarnings({"null", "java:S2589", "java:S6548", "java:S1172"})
 public class EntityProfiler {
 
     public static final EntityProfiler INSTANCE = new EntityProfiler();
@@ -214,7 +214,7 @@ public class EntityProfiler {
      * Record a single-type entity tick measurement, bucketed by dimension.
      * Called from EntityTickMixin when allTypesMode is false.
      */
-    public void record(Level world, long nanos) {
+    public void recordTick(Level world, long nanos) {
         if (!active) return;
         long[] data = perDim.computeIfAbsent(world.dimension(), k -> new long[2]);
         data[0] += nanos;
@@ -241,7 +241,7 @@ public class EntityProfiler {
         if (!active) return;
         ticksRemaining--;
         if (ticksRemaining <= 0) {
-            finalize(server);
+            completeSession();
         }
     }
 
@@ -260,7 +260,7 @@ public class EntityProfiler {
         perType.clear();
     }
 
-    private void finalize(MinecraftServer server) {
+    private void completeSession() {
         active = false;
         CommandSourceStack src = requester;
         requester = null;

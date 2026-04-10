@@ -6,6 +6,8 @@ import net.minecraft.world.entity.Entity;
 @SuppressWarnings("null")
 public class ChunkStatusUtil {
 
+    private ChunkStatusUtil() {}
+
     /**
      * Vanilla's despawn check fires only when a player is within 128 blocks.
      * If no player is within that range the mob will never despawn naturally,

@@ -4,4 +4,4 @@
   One line per feature or fix. Keep entries short and user-facing.
 -->
 
-- Profile header now shows the exact chunk count and grid dimensions: `-- Base Profile: 25 chunks profiled (5x5 area, 100 ticks) --` — values update dynamically based on the `--range` argument.
+- Code cleanup: SonarLint linting pass, string constants extracted, private constructors added to utility classes, code style improvements.

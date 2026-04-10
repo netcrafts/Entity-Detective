@@ -22,14 +22,12 @@ public class EntityDetective implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		LOGGER.info("Entity Detective loaded.");
-		CommandRegistrationCallback.EVENT.register((dispatcher, buildContext, selection) -> {
-			LocateCommand.register(dispatcher);
-		});
+		CommandRegistrationCallback.EVENT.register((dispatcher, buildContext, selection) ->
+				LocateCommand.register(dispatcher));
 		// 5.5.7 — clean up per-player cooldown state on disconnect
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-			LocateCommand.clearCooldown(handler.player.getUUID());
-		});
+		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+				LocateCommand.clearCooldown(handler.player.getUUID()));
 		// Advance the entity profiler tick counter each server tick
-		ServerTickEvents.END_SERVER_TICK.register(server -> EntityProfiler.INSTANCE.onServerTick(server));
+		ServerTickEvents.END_SERVER_TICK.register(EntityProfiler.INSTANCE::onServerTick);
 	}
 }

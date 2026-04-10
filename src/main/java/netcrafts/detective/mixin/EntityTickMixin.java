@@ -53,7 +53,7 @@ public abstract class EntityTickMixin {
         if (profiler.isAllTypesMode()) {
             profiler.recordByType(entity.getType(), elapsed);
         } else {
-            profiler.record((Level) (Object) this, elapsed);
+            profiler.recordTick((Level) (Object) this, elapsed);
         }
     }
 }

@@ -21,7 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-@SuppressWarnings("null")
+@SuppressWarnings({"null", "java:S2589"})
 public class EntityQuery {
 
     public record QueryResult(ChunkPos chunkPos, List<Entity> entities) {}
@@ -301,13 +301,13 @@ public class EntityQuery {
      */
     public static List<Entity> findPersistentEntities(ServerLevel world) {
         ArrayList<Entity> matched = new ArrayList<>();
-        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
-            return entity instanceof Mob mob
-                    && (mob.isPersistenceRequired()
-                        || mob.requiresCustomPersistence()
-                        || mob.isPassenger()
-                        || mob.isLeashed());
-        }, matched);
+        world.getEntities(EntityTypeTest.forClass(Entity.class),
+                entity -> entity instanceof Mob mob
+                        && (mob.isPersistenceRequired()
+                            || mob.requiresCustomPersistence()
+                            || mob.isPassenger()
+                            || mob.isLeashed()),
+                matched);
         matched.sort(Comparator.comparingDouble(e -> e.getX() * e.getX() + e.getZ() * e.getZ()));
         return matched;
     }

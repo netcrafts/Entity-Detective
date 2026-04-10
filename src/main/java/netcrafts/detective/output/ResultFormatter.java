@@ -25,8 +25,10 @@ import netcrafts.detective.query.MobCapInfo.CategoryInfo;
 import java.util.List;
 import java.util.Map;
 
-@SuppressWarnings("null")
+@SuppressWarnings({"null", "java:S2589"})
 public class ResultFormatter {
+
+    private ResultFormatter() {}
 
     private static final int MAX_CHUNKS_SHOWN = 50;
 
@@ -67,7 +69,10 @@ public class ResultFormatter {
         int max = info.max();
         double pct = max > 0 ? (double) cur / max : 0;
 
-        int color = pct < 0.5 ? COLOR_LOW : pct < 0.85 ? COLOR_MEDIUM : COLOR_HIGH;
+        int color;
+        if (pct < 0.5)       color = COLOR_LOW;
+        else if (pct < 0.85) color = COLOR_MEDIUM;
+        else                 color = COLOR_HIGH;
         String fraction = cur + " / " + max + String.format("  (%.0f%%)", pct * 100);
         line.append(Component.literal(fraction).withStyle(Style.EMPTY.withColor(color)));
         return line;
@@ -234,9 +239,10 @@ public class ResultFormatter {
 
         for (ItemTypeCount row : counts) {
             // Colour by item count volume: green <100, yellow <1000, red ≥1000
-            ChatFormatting color = row.itemTotal() < 100 ? ChatFormatting.GREEN
-                    : row.itemTotal() < 1000 ? ChatFormatting.YELLOW
-                    : ChatFormatting.RED;
+            ChatFormatting color;
+            if (row.itemTotal() < 100)       color = ChatFormatting.GREEN;
+            else if (row.itemTotal() < 1000) color = ChatFormatting.YELLOW;
+            else                             color = ChatFormatting.RED;
             MutableComponent rowLine = Component.literal(String.format("  %5d items  (%d entities)  ", row.itemTotal(), row.entityCount())).withStyle(color);
             rowLine.append(Component.literal(row.itemId().toString()).withStyle(ChatFormatting.GREEN));
             source.sendSuccess(() -> rowLine, false);

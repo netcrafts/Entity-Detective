@@ -43,10 +43,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
-@SuppressWarnings("null")
+
+@SuppressWarnings({"null", "java:S2589"})
 public class LocateCommand {
+
+    private LocateCommand() {}
+
+    private static final String ERR_INTERNAL  = "An internal error occurred. Check server logs.";
+    private static final String ERR_DIM       = "Unknown dimension: ";
+    private static final String ERR_CATEGORY  = "Unknown category: ";
+    private static final String ERR_ENTITY    = "Unknown entity type: ";
 
     // 5.5.5 — Per-player cooldown: prevents command spam from stalling the server
     private static final Map<UUID, Long> LAST_USE = new HashMap<>();
@@ -74,7 +81,7 @@ public class LocateCommand {
     private static final List<String> CATEGORIES = Arrays.stream(MobCategory.values())
             .filter(c -> c != MobCategory.MISC)
             .map(MobCategory::getName)
-            .collect(Collectors.toList());
+            .toList();
 
     private static final List<String> DIMENSIONS = List.of("overworld", "nether", "end");
 
@@ -377,7 +384,7 @@ public class LocateCommand {
         try {
             ServerLevel world = resolveWorld(source, dimArg);
             if (world == null) {
-                source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                source.sendFailure(Component.literal(ERR_DIM + dimArg));
                 return 0;
             }
             String dimName = ResultFormatter.dimensionName(world.dimension());
@@ -385,7 +392,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in mobcap command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -403,7 +410,7 @@ public class LocateCommand {
                     .findFirst()
                     .orElse(null);
             if (category == null || category == MobCategory.MISC) {
-                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                source.sendFailure(Component.literal(ERR_CATEGORY + categoryName
                         + ". Valid: " + String.join(", ", CATEGORIES)));
                 return 0;
             }
@@ -415,7 +422,7 @@ public class LocateCommand {
             } else {
                 ServerLevel world = resolveWorld(source, dimArg);
                 if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    source.sendFailure(Component.literal(ERR_DIM + dimArg));
                     return 0;
                 }
                 worlds = List.of(world);
@@ -429,7 +436,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in mob summary command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -447,7 +454,7 @@ public class LocateCommand {
                     .findFirst()
                     .orElse(null);
             if (category == null || category == MobCategory.MISC) {
-                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                source.sendFailure(Component.literal(ERR_CATEGORY + categoryName
                         + ". Valid: " + String.join(", ", CATEGORIES)));
                 return 0;
             }
@@ -459,7 +466,7 @@ public class LocateCommand {
             } else {
                 ServerLevel world = resolveWorld(source, dimArg);
                 if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    source.sendFailure(Component.literal(ERR_DIM + dimArg));
                     return 0;
                 }
                 worlds = List.of(world);
@@ -473,7 +480,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in lazy mob list command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -490,7 +497,7 @@ public class LocateCommand {
                     .findFirst()
                     .orElse(null);
             if (category == null || category == MobCategory.MISC) {
-                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                source.sendFailure(Component.literal(ERR_CATEGORY + categoryName
                         + ". Valid: " + String.join(", ", CATEGORIES)));
                 return 0;
             }
@@ -502,7 +509,7 @@ public class LocateCommand {
             } else {
                 ServerLevel world = resolveWorld(source, dimArg);
                 if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    source.sendFailure(Component.literal(ERR_DIM + dimArg));
                     return 0;
                 }
                 worlds = List.of(world);
@@ -516,7 +523,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in persistent mob list command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -534,7 +541,7 @@ public class LocateCommand {
             } else {
                 ServerLevel world = resolveWorld(source, dimArg);
                 if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    source.sendFailure(Component.literal(ERR_DIM + dimArg));
                     return 0;
                 }
                 worlds = List.of(world);
@@ -548,7 +555,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in persistent entity list command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -565,7 +572,7 @@ public class LocateCommand {
             Identifier id = IdentifierArgument.getId(ctx, "entityType");
             Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
             if (typeOpt.isEmpty()) {
-                source.sendFailure(Component.literal("Unknown entity type: " + id));
+                source.sendFailure(Component.literal(ERR_ENTITY + id));
                 return 0;
             }
             EntityType<?> entityType = typeOpt.get();
@@ -578,7 +585,7 @@ public class LocateCommand {
             } else {
                 ServerLevel world = resolveWorld(source, dimArg);
                 if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    source.sendFailure(Component.literal(ERR_DIM + dimArg));
                     return 0;
                 }
                 worlds = List.of(world);
@@ -592,7 +599,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in entity locate command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -611,7 +618,7 @@ public class LocateCommand {
             } else {
                 ServerLevel world = resolveWorld(source, dimArg);
                 if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    source.sendFailure(Component.literal(ERR_DIM + dimArg));
                     return 0;
                 }
                 worlds = List.of(world);
@@ -625,7 +632,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in lazy entity list command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -641,7 +648,7 @@ public class LocateCommand {
             } else {
                 ServerLevel world = resolveWorld(source, dimArg);
                 if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    source.sendFailure(Component.literal(ERR_DIM + dimArg));
                     return 0;
                 }
                 worlds = List.of(world);
@@ -655,7 +662,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in entity summary command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -673,7 +680,7 @@ public class LocateCommand {
             } else {
                 ServerLevel world = resolveWorld(source, dimArg);
                 if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    source.sendFailure(Component.literal(ERR_DIM + dimArg));
                     return 0;
                 }
                 worlds = List.of(world);
@@ -687,7 +694,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in lazy item list command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -703,7 +710,7 @@ public class LocateCommand {
             } else {
                 ServerLevel world = resolveWorld(source, dimArg);
                 if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    source.sendFailure(Component.literal(ERR_DIM + dimArg));
                     return 0;
                 }
                 worlds = List.of(world);
@@ -717,7 +724,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in item_summary command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -741,7 +748,7 @@ public class LocateCommand {
             } else {
                 ServerLevel world = resolveWorld(source, dimArg);
                 if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
+                    source.sendFailure(Component.literal(ERR_DIM + dimArg));
                     return 0;
                 }
                 worlds = List.of(world);
@@ -755,7 +762,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in item_locate command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -766,14 +773,14 @@ public class LocateCommand {
             Identifier id = IdentifierArgument.getId(ctx, "entityType");
             Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
             if (typeOpt.isEmpty()) {
-                source.sendFailure(Component.literal("Unknown entity type: " + id));
+                source.sendFailure(Component.literal(ERR_ENTITY + id));
                 return 0;
             }
             EntityProfiler.INSTANCE.start(source, typeOpt.get(), ticks);
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -792,7 +799,7 @@ public class LocateCommand {
                     .filter(c -> c.getName().equals(categoryName))
                     .findFirst().orElse(null);
             if (category == null || category == MobCategory.MISC) {
-                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                source.sendFailure(Component.literal(ERR_CATEGORY + categoryName
                         + ". Valid: " + String.join(", ", CATEGORIES)));
                 return 0;
             }
@@ -806,7 +813,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in mob summary radius", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -821,7 +828,7 @@ public class LocateCommand {
                     .filter(c -> c.getName().equals(categoryName))
                     .findFirst().orElse(null);
             if (category == null || category == MobCategory.MISC) {
-                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                source.sendFailure(Component.literal(ERR_CATEGORY + categoryName
                         + ". Valid: " + String.join(", ", CATEGORIES)));
                 return 0;
             }
@@ -835,7 +842,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in mob lazy radius", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -850,7 +857,7 @@ public class LocateCommand {
                     .filter(c -> c.getName().equals(categoryName))
                     .findFirst().orElse(null);
             if (category == null || category == MobCategory.MISC) {
-                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                source.sendFailure(Component.literal(ERR_CATEGORY + categoryName
                         + ". Valid: " + String.join(", ", CATEGORIES)));
                 return 0;
             }
@@ -864,7 +871,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in mob persistent radius", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -878,7 +885,7 @@ public class LocateCommand {
             Identifier id = IdentifierArgument.getId(ctx, "entityType");
             Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
             if (typeOpt.isEmpty()) {
-                source.sendFailure(Component.literal("Unknown entity type: " + id));
+                source.sendFailure(Component.literal(ERR_ENTITY + id));
                 return 0;
             }
             int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
@@ -891,7 +898,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in entity locate radius", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -909,7 +916,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in entity census", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -921,7 +928,7 @@ public class LocateCommand {
             Identifier id = IdentifierArgument.getId(ctx, "entityType");
             Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
             if (typeOpt.isEmpty()) {
-                source.sendFailure(Component.literal("Unknown entity type: " + id));
+                source.sendFailure(Component.literal(ERR_ENTITY + id));
                 return 0;
             }
             int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
@@ -931,7 +938,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile radius", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -947,7 +954,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile all", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -965,7 +972,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in item summary radius", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
@@ -990,7 +997,7 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in item locate radius", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
     }
