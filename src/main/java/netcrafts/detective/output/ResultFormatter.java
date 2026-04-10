@@ -374,8 +374,11 @@ public class ResultFormatter {
             int radiusChunks,
             Map<EntityType<?>, long[]> perType) {
 
+        int side = 2 * radiusChunks + 1;
+        int totalChunks = side * side;
         source.sendSuccess(() -> Component.literal(
-                String.format("-- Base Profile: %d-chunk range (%d ticks) --", radiusChunks, ticks))
+                String.format("-- Base Profile: %d chunks profiled (%dx%d area centered on player, %d ticks) --",
+                        totalChunks, side, side, ticks))
                 .withStyle(ChatFormatting.GOLD), false);
 
         long totalNanos = perType.values().stream().mapToLong(d -> d[0]).sum();

@@ -199,8 +199,10 @@ public class EntityProfiler {
         requester = source;
         active = true;
 
+        int side = 2 * chunkRange + 1;
+        int totalChunks = side * side;
         source.sendSuccess(() -> Component.literal(
-                "Profiling all entity types within " + chunkRange + "-chunk range for " + ticks + " ticks..."), false);
+                "Profiling all entity types in a " + totalChunks + "-chunk (" + side + "x" + side + ") area centered on player for " + ticks + " ticks..."), false);
         return true;
     }
 
