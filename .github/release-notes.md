@@ -4,6 +4,6 @@
   One line per feature or fix. Keep entries short and user-facing.
 -->
 
-- **Breaking:** `mob locate` → `entity locate`, `mob profile` → `entity profile`. The new `entity` namespace accepts any entity type ID (mobs, item frames, boats, etc.), making the command intent explicit.
-- Added `entity profile <type> [<ticks>]` command — measures avg MSPT contribution and avg entity count/tick for any entity type over a configurable window (default 100 ticks, min 20, max 6000); per-dimension breakdown included. Profiling technique adapted from [fabric-carpet](https://github.com/gnembon/fabric-carpet).
-- Added `--lazy-only` flag to `item locate` — filters results to items in lazy (non-ticking) chunks, useful for tracking accumulated drops in unmanned farms or far-from-spawn areas
+- Added `--radius <chunks>` flag (1–32) to `mob <category>`, `entity locate`, `entity profile`, `item`, and `item locate` — scopes the search to a sphere of N chunks around your position instead of scanning the whole world. Requires a player source; mutually exclusive with `--world`.
+- New command: `entity summary --radius <chunks>` — instant census of every entity type within the radius, sorted by count. No tick window; results are immediate.
+- New command: `entity profile all [<ticks>] --radius <chunks>` — profiles every entity type at your location over a tick window and reports MSPT cost sorted descending, with a TOTAL row. Useful for diagnosing the overall tick cost of a base or farm.
