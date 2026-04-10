@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
@@ -24,9 +25,9 @@ import java.util.Map;
  *
  * <ol>
  *   <li><b>Single-type</b> ({@link #start}) — times one EntityType across all dimensions
- *       (or within a radius if {@link #startWithRadius} is used).</li>
+ *       (or within a chunk range if {@link #startWithRange} is used).</li>
  *   <li><b>All-types</b> ({@link #startAllTypes}) — times every entity type within a
- *       player-defined radius, bucketed by type. Always radius-scoped.</li>
+ *       player-defined chunk range, bucketed by type. Always range-scoped.</li>
  * </ol>
  *
  * Both modes hook into {@link netcrafts.detective.mixin.EntityTickMixin} via
@@ -36,6 +37,7 @@ import java.util.Map;
  * Profiling approach adapted from fabric-carpet's CarpetProfiler.
  * @see <a href="https://github.com/gnembon/fabric-carpet">fabric-carpet</a>
  */
+@SuppressWarnings("null")
 public class EntityProfiler {
 
     public static final EntityProfiler INSTANCE = new EntityProfiler();
@@ -58,13 +60,13 @@ public class EntityProfiler {
     private final Map<ResourceKey<Level>, long[]> perDim = new LinkedHashMap<>();
 
     // -------------------------------------------------------------------------
-    // Radius fields (used by both single-type-with-radius and all-types modes)
+    // Range fields (used by both single-type-with-range and all-types modes)
     // -------------------------------------------------------------------------
 
     private boolean allTypesMode = false;
-    private @Nullable Vec3 radiusCentre;
-    private double radiusSq = 0.0;       // blockRadius^2, precomputed for hot-path use
-    private int radiusChunks = 0;        // stored for display in results header
+    private int playerChunkX = 0;        // chunk coordinates of the profiling origin
+    private int playerChunkZ = 0;
+    private int chunkRange = 0;          // stored for display in results header
     private @Nullable ResourceKey<Level> targetDim;
 
     // -------------------------------------------------------------------------
@@ -89,23 +91,19 @@ public class EntityProfiler {
         if (allTypesMode) {
             return isInRange(entity, world);
         } else {
-            // Single-type mode: type must match; if radius is set, position must also match.
+            // Single-type mode: type must match; if range is set, chunk position must also match.
             if (entity.getType() != targetType) return false;
-            if (radiusCentre == null) return true; // no radius restriction
+            if (targetDim == null) return true; // no range restriction
             return isInRange(entity, world);
         }
     }
 
-    /** Returns true if the entity is within the active radius and in the target dimension. */
+    /** Returns true if the entity's chunk is within the active chunk-square range and dimension. */
     public boolean isInRange(Entity entity, Level world) {
-        if (radiusCentre == null) return false;
         if (!world.dimension().equals(targetDim)) return false;
-        return entity.distanceToSqr(radiusCentre) <= radiusSq;
-    }
-
-    /** Returns true if a profiling session is currently active. */
-    public boolean isActive() {
-        return active;
+        ChunkPos ec = ChunkPos.containing(entity.blockPosition());
+        return Math.abs(ec.x() - playerChunkX) <= chunkRange
+                && Math.abs(ec.z() - playerChunkZ) <= chunkRange;
     }
 
     /** Returns true if the active session is in all-types mode. */
@@ -118,7 +116,7 @@ public class EntityProfiler {
     // -------------------------------------------------------------------------
 
     /**
-     * Start a standard single-type profiling session (no radius restriction).
+     * Start a standard single-type profiling session (no range restriction).
      * Returns false if a session is already running.
      */
     public boolean start(CommandSourceStack source, EntityType<?> type, int ticks) {
@@ -142,16 +140,16 @@ public class EntityProfiler {
     }
 
     /**
-     * Start a single-type profiling session restricted to a spatial radius.
+     * Start a single-type profiling session restricted to a chunk-square range.
      * Returns false if a session is already running.
      */
-    public boolean startWithRadius(
+    public boolean startWithRange(
             CommandSourceStack source,
             EntityType<?> type,
             int ticks,
             Vec3 centre,
             ResourceKey<Level> dim,
-            double blockRadius) {
+            int chunkRange) {
         if (active) {
             source.sendFailure(Component.literal(
                     "A profile is already running. Wait for it to complete."));
@@ -159,9 +157,9 @@ public class EntityProfiler {
         }
         resetState();
         targetType = type;
-        radiusCentre = centre;
-        radiusSq = blockRadius * blockRadius;
-        radiusChunks = (int) (blockRadius / 16);
+        playerChunkX = (int) Math.floor(centre.x) >> 4;
+        playerChunkZ = (int) Math.floor(centre.z) >> 4;
+        this.chunkRange = chunkRange;
         targetDim = dim;
         ticksRequested = ticks;
         ticksRemaining = ticks;
@@ -171,12 +169,12 @@ public class EntityProfiler {
         @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
         String label = id != null ? id.toString() : type.getDescriptionId();
         source.sendSuccess(() -> Component.literal(
-                "Profiling " + label + " within " + radiusChunks + " chunks for " + ticks + " ticks..."), false);
+                "Profiling " + label + " within " + chunkRange + "-chunk range for " + ticks + " ticks..."), false);
         return true;
     }
 
     /**
-     * Start an all-types profiling session within the given radius.
+     * Start an all-types profiling session within the given chunk-square range.
      * Returns false if a session is already running.
      */
     public boolean startAllTypes(
@@ -184,7 +182,7 @@ public class EntityProfiler {
             int ticks,
             Vec3 centre,
             ResourceKey<Level> dim,
-            double blockRadius) {
+            int chunkRange) {
         if (active) {
             source.sendFailure(Component.literal(
                     "A profile is already running. Wait for it to complete."));
@@ -192,9 +190,9 @@ public class EntityProfiler {
         }
         resetState();
         allTypesMode = true;
-        radiusCentre = centre;
-        radiusSq = blockRadius * blockRadius;
-        radiusChunks = (int) (blockRadius / 16);
+        playerChunkX = (int) Math.floor(centre.x) >> 4;
+        playerChunkZ = (int) Math.floor(centre.z) >> 4;
+        this.chunkRange = chunkRange;
         targetDim = dim;
         ticksRequested = ticks;
         ticksRemaining = ticks;
@@ -202,7 +200,7 @@ public class EntityProfiler {
         active = true;
 
         source.sendSuccess(() -> Component.literal(
-                "Profiling all entity types within " + radiusChunks + " chunks for " + ticks + " ticks..."), false);
+                "Profiling all entity types within " + chunkRange + "-chunk range for " + ticks + " ticks..."), false);
         return true;
     }
 
@@ -252,9 +250,9 @@ public class EntityProfiler {
     private void resetState() {
         allTypesMode = false;
         targetType = null;
-        radiusCentre = null;
-        radiusSq = 0.0;
-        radiusChunks = 0;
+        playerChunkX = 0;
+        playerChunkZ = 0;
+        chunkRange = 0;
         targetDim = null;
         perDim.clear();
         perType.clear();
@@ -267,9 +265,9 @@ public class EntityProfiler {
         if (src == null) return;
         try {
             if (allTypesMode) {
-                ResultFormatter.sendBaseProfileResults(src, ticksRequested, radiusChunks, perType);
+                ResultFormatter.sendBaseProfileResults(src, ticksRequested, chunkRange, perType);
             } else {
-                ResultFormatter.sendProfileResults(src, targetType, ticksRequested, radiusChunks, perDim);
+                ResultFormatter.sendProfileResults(src, targetType, ticksRequested, chunkRange, perDim);
             }
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: error sending profile results", e);

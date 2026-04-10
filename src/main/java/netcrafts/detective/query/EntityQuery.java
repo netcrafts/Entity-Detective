@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+@SuppressWarnings("null")
 public class EntityQuery {
 
     public record QueryResult(ChunkPos chunkPos, List<Entity> entities) {}
@@ -120,14 +121,6 @@ public class EntityQuery {
      * Results are sorted descending by count.
      * Entities whose registry key is null (unregistered modded entities) are skipped.
      */
-    public static List<EntityTypeCount> countEntitiesByType(ServerLevel world) {
-        return countEntitiesByType(world, false);
-    }
-
-    /**
-     * Counts entities in the given dimension, grouped by entity type.
-     * If persistentOnly is true, only counts persistent mobs (name-tagged, holding item, leashed, riding).
-     */
     public static List<EntityTypeCount> countEntitiesByType(ServerLevel world, boolean persistentOnly) {
         ArrayList<Entity> all = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
@@ -143,7 +136,7 @@ public class EntityQuery {
 
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (Entity entity : all) {
-            @Nullable Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            @Nullable Identifier key = entityTypeKey(entity);
             if (key == null) continue;
             counts.computeIfAbsent(key, k -> new long[]{0L})[0] += 1;
         }
@@ -167,7 +160,7 @@ public class EntityQuery {
         // entity count and item total keyed by Identifier
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (ItemEntity ie : all) {
-            @Nullable Identifier key = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
+            @Nullable Identifier key = itemEntityKey(ie);
             if (key == null) continue;
             long[] row = counts.computeIfAbsent(key, k -> new long[]{0L, 0L});
             row[0] += 1;                       // entity count
@@ -230,7 +223,7 @@ public class EntityQuery {
 
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (Entity entity : all) {
-            @Nullable Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            @Nullable Identifier key = entityTypeKey(entity);
             if (key == null) continue;
             counts.computeIfAbsent(key, k -> new long[]{0L})[0] += 1;
         }
@@ -260,14 +253,6 @@ public class EntityQuery {
         }, matched);
         matched.sort(Comparator.comparingDouble(e -> e.getX() * e.getX() + e.getZ() * e.getZ()));
         return matched;
-    }
-
-    /**
-     * Returns all lazy entities of any type in the given dimension, sorted by squared XZ
-     * distance from spawn (0, 0).
-     */
-    public static List<Entity> findLazyEntities(ServerLevel world) {
-        return findLazyEntities(world, false);
     }
 
     /**
@@ -341,63 +326,49 @@ public class EntityQuery {
     }
 
     // -------------------------------------------------------------------------
-    // Radius-filtered query variants (AABB-style pre-check + sphere cull)
-    // All accept Vec3 centre and double blockRadius (= radiusChunks * 16).
+    // Range-filtered query variants (chunk-square check)
+    // All accept Vec3 centre and int chunkRange.
+    // --range N covers a (2N+1) x (2N+1) square of chunks centred on the player's chunk.
     // -------------------------------------------------------------------------
 
-    /**
-     * Finds entities of the given MobCategory within blockRadius of centre, grouped by chunk.
-     * Used by mob &lt;category&gt; --radius.
-     */
-    public static List<QueryResult> findEntitiesInRadius(
-            ServerLevel world,
-            MobCategory category,
-            boolean lazyOnly,
-            boolean includePersistent,
-            Vec3 centre,
-            double blockRadius) {
+    /** Returns the chunk coordinate for a world-space coordinate. */
+    private static int toChunkCoord(double worldCoord) {
+        return (int) Math.floor(worldCoord) >> 4;
+    }
 
-        double rSq = blockRadius * blockRadius;
-        Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
-        ArrayList<Entity> matched = new ArrayList<>();
-        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
-            if (entity.getType().getCategory() != category) return false;
-            if (entity.distanceToSqr(centre) > rSq) return false;
-            boolean isPersistent = entity instanceof Mob mob
-                    && (mob.isPersistenceRequired()
-                        || mob.requiresCustomPersistence()
-                        || mob.isPassenger()
-                        || mob.isLeashed());
-            return includePersistent ? isPersistent : !isPersistent;
-        }, matched);
+    /** Returns true if the entity's chunk is within chunkRange of (pcx, pcz). */
+    private static boolean inChunkRange(Entity entity, int pcx, int pcz, int chunkRange) {
+        ChunkPos ec = ChunkPos.containing(entity.blockPosition());
+        return Math.abs(ec.x() - pcx) <= chunkRange && Math.abs(ec.z() - pcz) <= chunkRange;
+    }
 
-        for (Entity entity : matched) {
-            if (lazyOnly && !ChunkStatusUtil.isLazy(world, entity)) continue;
-            ChunkPos pos = ChunkPos.containing(entity.blockPosition());
-            byChunk.computeIfAbsent(pos, k -> new ArrayList<>()).add(entity);
-        }
-        return byChunk.entrySet().stream()
-                .map(e -> new QueryResult(e.getKey(), e.getValue()))
-                .sorted(Comparator.comparingInt(r -> -r.entities().size()))
-                .toList();
+    /** Registry key lookup declared @Nullable to allow defensive null checks (modded entities may be unregistered). */
+    private static @Nullable Identifier entityTypeKey(Entity entity) {
+        return BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+    }
+
+    /** Registry key lookup declared @Nullable to allow defensive null checks (modded items may be unregistered). */
+    private static @Nullable Identifier itemEntityKey(ItemEntity ie) {
+        return BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
     }
 
     /**
-     * Counts entities of the given MobCategory within blockRadius of centre, by entity type.
-     * Used by mob &lt;category&gt; --radius (summary mode).
+     * Counts entities of the given MobCategory within chunkRange of centre, by entity type.
+     * Used by mob &lt;category&gt; --range (summary mode).
      */
-    public static List<EntityTypeCount> countEntitiesByCategoryInRadius(
+    public static List<EntityTypeCount> countEntitiesByCategoryInRange(
             ServerLevel world,
             MobCategory category,
             boolean persistent,
             Vec3 centre,
-            double blockRadius) {
+            int chunkRange) {
 
-        double rSq = blockRadius * blockRadius;
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
         ArrayList<Entity> all = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
             if (entity.getType().getCategory() != category) return false;
-            if (entity.distanceToSqr(centre) > rSq) return false;
+            if (!inChunkRange(entity, pcx, pcz, chunkRange)) return false;
             boolean isPersistent = entity instanceof Mob mob
                     && (mob.isPersistenceRequired()
                         || mob.requiresCustomPersistence()
@@ -408,7 +379,7 @@ public class EntityQuery {
 
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (Entity entity : all) {
-            @Nullable Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            @Nullable Identifier key = entityTypeKey(entity);
             if (key == null) continue;
             counts.computeIfAbsent(key, k -> new long[]{0L})[0] += 1;
         }
@@ -419,21 +390,22 @@ public class EntityQuery {
     }
 
     /**
-     * Returns lazy entities of the given category within blockRadius of centre.
-     * Used by mob &lt;category&gt; --radius --lazy-only.
+     * Returns lazy entities of the given category within chunkRange of centre.
+     * Used by mob &lt;category&gt; --range --lazy-only.
      */
-    public static List<Entity> findLazyByCategoryInRadius(
+    public static List<Entity> findLazyByCategoryInRange(
             ServerLevel world,
             MobCategory category,
             boolean persistent,
             Vec3 centre,
-            double blockRadius) {
+            int chunkRange) {
 
-        double rSq = blockRadius * blockRadius;
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
         ArrayList<Entity> matched = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
             if (entity.getType().getCategory() != category) return false;
-            if (entity.distanceToSqr(centre) > rSq) return false;
+            if (!inChunkRange(entity, pcx, pcz, chunkRange)) return false;
             if (!ChunkStatusUtil.isLazy(world, entity)) return false;
             if (!persistent) return true;
             return entity instanceof Mob mob
@@ -447,20 +419,21 @@ public class EntityQuery {
     }
 
     /**
-     * Returns persistent entities of the given category within blockRadius of centre.
-     * Used by mob &lt;category&gt; --radius --persistent.
+     * Returns persistent entities of the given category within chunkRange of centre.
+     * Used by mob &lt;category&gt; --range --persistent.
      */
-    public static List<Entity> findPersistentByCategoryInRadius(
+    public static List<Entity> findPersistentByCategoryInRange(
             ServerLevel world,
             MobCategory category,
             Vec3 centre,
-            double blockRadius) {
+            int chunkRange) {
 
-        double rSq = blockRadius * blockRadius;
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
         ArrayList<Entity> matched = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
             if (entity.getType().getCategory() != category) return false;
-            if (entity.distanceToSqr(centre) > rSq) return false;
+            if (!inChunkRange(entity, pcx, pcz, chunkRange)) return false;
             return entity instanceof Mob mob
                     && (mob.isPersistenceRequired()
                         || mob.requiresCustomPersistence()
@@ -472,22 +445,23 @@ public class EntityQuery {
     }
 
     /**
-     * Finds entities of the given EntityType within blockRadius of centre, grouped by chunk.
-     * Used by entity locate &lt;type&gt; --radius.
+     * Finds entities of the given EntityType within chunkRange of centre, grouped by chunk.
+     * Used by entity locate &lt;type&gt; --range.
      */
-    public static List<QueryResult> findByTypeInRadius(
+    public static List<QueryResult> findByTypeInRange(
             ServerLevel world,
             EntityType<?> entityType,
             boolean lazyOnly,
             Vec3 centre,
-            double blockRadius) {
+            int chunkRange) {
 
-        double rSq = blockRadius * blockRadius;
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
         Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
         ArrayList<Entity> matched = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
             if (entity.getType() != entityType) return false;
-            return entity.distanceToSqr(centre) <= rSq;
+            return inChunkRange(entity, pcx, pcz, chunkRange);
         }, matched);
 
         for (Entity entity : matched) {
@@ -502,22 +476,23 @@ public class EntityQuery {
     }
 
     /**
-     * Counts ALL entity types within blockRadius of centre.
-     * Used by entity summary --radius (census query).
+     * Counts ALL entity types within chunkRange of centre.
+     * Used by entity summary --range (census query).
      */
-    public static List<EntityTypeCount> countAllEntitiesInRadius(
+    public static List<EntityTypeCount> countAllEntitiesInRange(
             ServerLevel world,
             Vec3 centre,
-            double blockRadius) {
+            int chunkRange) {
 
-        double rSq = blockRadius * blockRadius;
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
         ArrayList<Entity> all = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(Entity.class),
-                entity -> entity.distanceToSqr(centre) <= rSq, all);
+                entity -> inChunkRange(entity, pcx, pcz, chunkRange), all);
 
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (Entity entity : all) {
-            @Nullable Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            @Nullable Identifier key = entityTypeKey(entity);
             if (key == null) continue;
             counts.computeIfAbsent(key, k -> new long[]{0L})[0] += 1;
         }
@@ -528,22 +503,23 @@ public class EntityQuery {
     }
 
     /**
-     * Counts item entities within blockRadius of centre, grouped by item type.
-     * Used by item --radius.
+     * Counts item entities within chunkRange of centre, grouped by item type.
+     * Used by item --range.
      */
-    public static List<ItemTypeCount> countItemsByTypeInRadius(
+    public static List<ItemTypeCount> countItemsByTypeInRange(
             ServerLevel world,
             Vec3 centre,
-            double blockRadius) {
+            int chunkRange) {
 
-        double rSq = blockRadius * blockRadius;
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
         ArrayList<ItemEntity> all = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(ItemEntity.class),
-                ie -> ie.distanceToSqr(centre) <= rSq, all);
+                ie -> inChunkRange(ie, pcx, pcz, chunkRange), all);
 
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (ItemEntity ie : all) {
-            @Nullable Identifier key = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
+            @Nullable Identifier key = itemEntityKey(ie);
             if (key == null) continue;
             long[] row = counts.computeIfAbsent(key, k -> new long[]{0L, 0L});
             row[0] += 1;
@@ -556,21 +532,22 @@ public class EntityQuery {
     }
 
     /**
-     * Finds item entities of the given item ID within blockRadius of centre, grouped by chunk.
-     * Used by item locate &lt;id&gt; --radius.
+     * Finds item entities of the given item ID within chunkRange of centre, grouped by chunk.
+     * Used by item locate &lt;id&gt; --range.
      */
-    public static List<QueryResult> findItemsByTypeInRadius(
+    public static List<QueryResult> findItemsByTypeInRange(
             ServerLevel world,
             Identifier itemId,
             boolean lazyOnly,
             Vec3 centre,
-            double blockRadius) {
+            int chunkRange) {
 
-        double rSq = blockRadius * blockRadius;
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
         Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
         ArrayList<ItemEntity> matched = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(ItemEntity.class), ie -> {
-            if (ie.distanceToSqr(centre) > rSq) return false;
+            if (!inChunkRange(ie, pcx, pcz, chunkRange)) return false;
             @Nullable Identifier key = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
             return itemId.equals(key);
         }, matched);

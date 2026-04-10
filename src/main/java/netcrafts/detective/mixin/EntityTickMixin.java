@@ -20,8 +20,8 @@ import java.util.function.Consumer;
  *
  * Supports two profiling modes:
  * <ul>
- *   <li>Single-type: gate is {@link EntityProfiler#shouldTime} — type match, optional radius.</li>
- *   <li>All-types: gate is {@link EntityProfiler#shouldTime} — any entity within radius.</li>
+ *   <li>Single-type: gate is {@link EntityProfiler#shouldTime} — type match, optional range.</li>
+ *   <li>All-types: gate is {@link EntityProfiler#shouldTime} — any entity within range.</li>
  * </ul>
  *
  * The TAIL injection records into either {@link EntityProfiler#record} (single-type,
@@ -30,6 +30,7 @@ import java.util.function.Consumer;
  * Injection technique adapted from fabric-carpet's Level_tickMixin.
  * @see <a href="https://github.com/gnembon/fabric-carpet">fabric-carpet</a>
  */
+@SuppressWarnings("null")
 @Mixin(Level.class)
 public abstract class EntityTickMixin {
 

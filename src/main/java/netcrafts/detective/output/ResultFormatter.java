@@ -12,7 +12,6 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 
@@ -26,6 +25,7 @@ import netcrafts.detective.query.MobCapInfo.CategoryInfo;
 import java.util.List;
 import java.util.Map;
 
+@SuppressWarnings("null")
 public class ResultFormatter {
 
     private static final int MAX_CHUNKS_SHOWN = 50;
@@ -120,21 +120,6 @@ public class ResultFormatter {
         }
     }
 
-    public static void sendLocateSummary(
-            CommandSourceStack source,
-            List<QueryResult> results,
-            String label,
-            String dimName,
-            boolean lazyOnly) {
-
-        long total = results.stream().mapToLong(r -> r.entities().size()).sum();
-        String msg = String.format("%s [%s]%s: %d entities across %d chunks",
-                label, dimName,
-                lazyOnly ? " (lazy only)" : "",
-                total, results.size());
-        source.sendSuccess(() -> Component.literal(msg).withStyle(ChatFormatting.YELLOW), false);
-    }
-
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -143,7 +128,8 @@ public class ResultFormatter {
         // 5.5.2 / 5.5.8 — getKey() can return null for unregistered modded entity types
         @Nullable Identifier typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         String type = typeKey != null ? typeKey.toString() : "unknown:" + entity.getType().getDescriptionId();
-        String name   = entity.hasCustomName() ? " \"" + entity.getCustomName().getString() + "\"" : "";
+        net.minecraft.network.chat.Component cn = entity.getCustomName();
+        String name   = cn != null ? " \"" + cn.getString() + "\"" : "";
         String reason = persistenceReason(entity);
         String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
         String tpCommand = String.format("/tp @s %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
@@ -271,7 +257,7 @@ public class ResultFormatter {
      * @param source        who to send results to
      * @param type          the profiled entity type
      * @param ticks         the sample window (total ticks)
-     * @param radiusChunks  chunk radius used during profiling; 0 means no radius restriction
+     * @param radiusChunks  chunk range used during profiling; 0 means no range restriction
      * @param perDim        per-dimension data: [0] total nanos, [1] total entity-ticks
      */
     public static void sendProfileResults(
@@ -284,7 +270,7 @@ public class ResultFormatter {
         @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
         String label = id != null ? id.toString() : type.getDescriptionId();
 
-        String radiusNote = radiusChunks > 0 ? " [" + radiusChunks + "-chunk radius]" : "";
+        String radiusNote = radiusChunks > 0 ? " [" + radiusChunks + "-chunk range]" : "";
 
         double divider = 1.0 / ticks / 1_000_000.0; // nanos per tick → ms per tick
         long totalNanos = perDim.values().stream().mapToLong(d -> d[0]).sum();
@@ -333,13 +319,13 @@ public class ResultFormatter {
     }
 
     // -------------------------------------------------------------------------
-    // Entity census (entity summary --radius)
+    // Entity census (entity summary --range)
     // -------------------------------------------------------------------------
 
     /**
-     * Sends a census of all entity types within a radius.
+     * Sends a census of all entity types within a chunk range.
      *
-     * @param radiusChunks  the radius used, shown in the header
+     * @param radiusChunks  the range used, shown in the header
      */
     public static void sendEntityCensus(
             CommandSourceStack source,
@@ -350,13 +336,13 @@ public class ResultFormatter {
 
         if (total == 0) {
             source.sendSuccess(() -> Component.literal(
-                    "No entities found within " + radiusChunks + "-chunk radius.")
+                    "No entities found within " + radiusChunks + "-chunk range.")
                     .withStyle(ChatFormatting.YELLOW), false);
             return;
         }
 
         source.sendSuccess(() -> Component.literal(
-                "-- Entity Census: " + radiusChunks + "-chunk radius: " + total + " entities --")
+                "-- Entity Census: " + radiusChunks + "-chunk range: " + total + " entities --")
                 .withStyle(ChatFormatting.GOLD), false);
 
         for (EntityTypeCount row : counts) {
@@ -372,14 +358,14 @@ public class ResultFormatter {
     }
 
     // -------------------------------------------------------------------------
-    // All-types base profile (entity profile all --radius)
+    // All-types base profile (entity profile all --range)
     // -------------------------------------------------------------------------
 
     /**
-     * Sends the result of an all-types profiling session (entity profile all --radius).
+     * Sends the result of an all-types profiling session (entity profile all --range).
      * Rows are sorted by descending MSPT cost.
      *
-     * @param radiusChunks  chunk radius used, shown in the header
+     * @param radiusChunks  chunk range used, shown in the header
      * @param perType       per-type data: [0] total nanos, [1] total entity-ticks
      */
     public static void sendBaseProfileResults(
@@ -389,7 +375,7 @@ public class ResultFormatter {
             Map<EntityType<?>, long[]> perType) {
 
         source.sendSuccess(() -> Component.literal(
-                String.format("-- Base Profile: %d-chunk radius (%d ticks) --", radiusChunks, ticks))
+                String.format("-- Base Profile: %d-chunk range (%d ticks) --", radiusChunks, ticks))
                 .withStyle(ChatFormatting.GOLD), false);
 
         long totalNanos = perType.values().stream().mapToLong(d -> d[0]).sum();
@@ -397,7 +383,7 @@ public class ResultFormatter {
 
         if (totalCount == 0) {
             source.sendSuccess(() -> Component.literal(
-                    "  No entities ticked within the radius during the sample window.")
+                    "  No entities ticked within the range during the sample window.")
                     .withStyle(ChatFormatting.YELLOW), false);
             return;
         }
@@ -527,7 +513,8 @@ public class ResultFormatter {
             @Nullable Identifier typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
             type = typeKey != null ? typeKey.toString() : "unknown:" + entity.getType().getDescriptionId();
         }
-        String name   = entity.hasCustomName() ? " \"" + entity.getCustomName().getString() + "\"" : "";
+        net.minecraft.network.chat.Component cn2 = entity.getCustomName();
+        String name   = cn2 != null ? " \"" + cn2.getString() + "\"" : "";
         String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
         String tpCmd  = String.format("/tp @s %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
         MutableComponent line = Component.literal("  ")

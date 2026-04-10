@@ -33,7 +33,7 @@ import netcrafts.detective.query.EntityQuery;
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
 import netcrafts.detective.query.EntityQuery.EntityTypeCount;
 import netcrafts.detective.query.MobCapInfo;
-import netcrafts.detective.query.RadiusFilter;
+import netcrafts.detective.query.RangeFilter;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -45,6 +45,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@SuppressWarnings("null")
 public class LocateCommand {
 
     // 5.5.5 — Per-player cooldown: prevents command spam from stalling the server
@@ -167,8 +168,8 @@ public class LocateCommand {
                                 .executes(ctx -> executeMobSummary(ctx, StringArgumentType.getString(ctx, "dim"), false))
                             )
                         )
-                        .then(Commands.literal("--radius")
-                            .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                        .then(Commands.literal("--range")
+                            .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
                                 .executes(ctx -> executeMobSummaryRadius(ctx))
                                 .then(Commands.literal("--lazy-only")
                                     .executes(ctx -> executeMobLazyListRadius(ctx, false))
@@ -250,8 +251,8 @@ public class LocateCommand {
                                     )
                                 )
                             )
-                            .then(Commands.literal("--radius")
-                                .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                            .then(Commands.literal("--range")
+                                .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
                                     .executes(ctx -> executeEntityLocateRadius(ctx, false, false))
                                     .then(Commands.literal("--lazy-only")
                                         .executes(ctx -> executeEntityLocateRadius(ctx, true, false))
@@ -267,21 +268,21 @@ public class LocateCommand {
                         )
                     )
 
-                    // entity summary --radius <n>  — census of all entity types in radius
+                    // entity summary --range <n>  — census of all entity types in range
                     .then(Commands.literal("summary")
-                        .then(Commands.literal("--radius")
-                            .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                        .then(Commands.literal("--range")
+                            .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
                                 .executes(ctx -> executeEntityCensus(ctx))
                             )
                         )
                     )
 
-                    // entity profile all [ticks] --radius <n>
-                    // entity profile <type> [ticks] [--radius <n>]
+                    // entity profile all [ticks] --range <n>
+                    // entity profile <type> [ticks] [--range <n>]
                     .then(Commands.literal("profile")
                         .then(Commands.literal("all")
-                            .then(Commands.literal("--radius")
-                                .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                            .then(Commands.literal("--range")
+                                .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
                                     .executes(ctx -> executeProfileAll(ctx, 100))
                                     .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                         .executes(ctx -> executeProfileAll(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
@@ -294,14 +295,14 @@ public class LocateCommand {
                             .executes(ctx -> executeProfile(ctx, 100))
                             .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                 .executes(ctx -> executeProfile(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
-                                .then(Commands.literal("--radius")
-                                    .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                                .then(Commands.literal("--range")
+                                    .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
                                         .executes(ctx -> executeProfileRadius(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
                                     )
                                 )
                             )
-                            .then(Commands.literal("--radius")
-                                .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                            .then(Commands.literal("--range")
+                                .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
                                     .executes(ctx -> executeProfileRadius(ctx, 100))
                                     .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                         .executes(ctx -> executeProfileRadius(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
@@ -332,8 +333,8 @@ public class LocateCommand {
                             )
                         )
                     )
-                    .then(Commands.literal("--radius")
-                        .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                    .then(Commands.literal("--range")
+                        .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
                             .executes(ctx -> executeItemSummaryRadius(ctx))
                         )
                     )
@@ -356,8 +357,8 @@ public class LocateCommand {
                                     .executes(ctx -> executeItemLocate(ctx, false, StringArgumentType.getString(ctx, "dim")))
                                 )
                             )
-                            .then(Commands.literal("--radius")
-                                .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                            .then(Commands.literal("--range")
+                                .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
                                     .executes(ctx -> executeItemLocateRadius(ctx, false))
                                     .then(Commands.literal("--lazy-only")
                                         .executes(ctx -> executeItemLocateRadius(ctx, true))
@@ -547,60 +548,6 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in persistent entity list command", e);
-            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
-            return 0;
-        }
-    }
-
-    private static int executeLocate(
-            CommandContext<CommandSourceStack> ctx,
-            boolean lazyOnly,
-            boolean summary,
-            String dimArg,
-            boolean persistent,
-            boolean debug) {
-
-        if (onCooldown(ctx)) return 0;
-        CommandSourceStack source = ctx.getSource();
-        try {
-            String categoryName = StringArgumentType.getString(ctx, "category");
-
-            MobCategory category = Arrays.stream(MobCategory.values())
-                    .filter(c -> c.getName().equals(categoryName))
-                    .findFirst()
-                    .orElse(null);
-            if (category == null || category == MobCategory.MISC) {
-                source.sendFailure(Component.literal("Unknown category: " + categoryName
-                        + ". Valid: " + String.join(", ", CATEGORIES)));
-                return 0;
-            }
-
-            // No --world specified → scan all loaded dimensions
-            List<ServerLevel> worlds;
-            if (dimArg == null) {
-                worlds = new java.util.ArrayList<>();
-                source.getServer().getAllLevels().forEach(worlds::add);
-            } else {
-                ServerLevel world = resolveWorld(source, dimArg);
-                if (world == null) {
-                    source.sendFailure(Component.literal("Unknown dimension: " + dimArg));
-                    return 0;
-                }
-                worlds = List.of(world);
-            }
-
-            for (ServerLevel world : worlds) {
-                String dimName = ResultFormatter.dimensionName(world.dimension());
-                var results = EntityQuery.findEntities(world, category, lazyOnly, persistent);
-                if (summary) {
-                    ResultFormatter.sendLocateSummary(source, results, category.getName(), dimName, lazyOnly);
-                } else {
-                    ResultFormatter.sendLocateResults(source, results, category.getName(), dimName, lazyOnly, debug);
-                }
-            }
-            return 1;
-        } catch (Exception e) {
-            EntityDetective.LOGGER.error("EntityDetective: unexpected error in locate command", e);
             source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
             return 0;
         }
@@ -838,7 +785,7 @@ public class LocateCommand {
     private static int executeMobSummaryRadius(CommandContext<CommandSourceStack> ctx) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
-        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        if (RangeFilter.sourceIsNotPlayer(source)) return 0;
         try {
             String categoryName = StringArgumentType.getString(ctx, "category");
             MobCategory category = Arrays.stream(MobCategory.values())
@@ -849,13 +796,12 @@ public class LocateCommand {
                         + ". Valid: " + String.join(", ", CATEGORIES)));
                 return 0;
             }
-            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
-            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
             ServerLevel world = source.getLevel();
-            var counts = EntityQuery.countEntitiesByCategoryInRadius(world, category, false, centre, blockRadius);
+            var counts = EntityQuery.countEntitiesByCategoryInRange(world, category, false, centre, chunkRange);
             ResultFormatter.sendMobSummary(source, counts,
-                    categoryName + " (" + radiusChunks + "-chunk radius)",
+                    categoryName + " (" + chunkRange + "-chunk range)",
                     ResultFormatter.dimensionName(world.dimension()));
             return 1;
         } catch (Exception e) {
@@ -868,7 +814,7 @@ public class LocateCommand {
     private static int executeMobLazyListRadius(CommandContext<CommandSourceStack> ctx, boolean persistent) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
-        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        if (RangeFilter.sourceIsNotPlayer(source)) return 0;
         try {
             String categoryName = StringArgumentType.getString(ctx, "category");
             MobCategory category = Arrays.stream(MobCategory.values())
@@ -879,13 +825,12 @@ public class LocateCommand {
                         + ". Valid: " + String.join(", ", CATEGORIES)));
                 return 0;
             }
-            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
-            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
             ServerLevel world = source.getLevel();
-            List<Entity> entities = EntityQuery.findLazyByCategoryInRadius(world, category, persistent, centre, blockRadius);
+            List<Entity> entities = EntityQuery.findLazyByCategoryInRange(world, category, persistent, centre, chunkRange);
             ResultFormatter.sendLazyEntityList(source, entities,
-                    categoryName + " (" + radiusChunks + "-chunk radius)",
+                    categoryName + " (" + chunkRange + "-chunk range)",
                     ResultFormatter.dimensionName(world.dimension()));
             return 1;
         } catch (Exception e) {
@@ -898,7 +843,7 @@ public class LocateCommand {
     private static int executeMobPersistentListRadius(CommandContext<CommandSourceStack> ctx) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
-        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        if (RangeFilter.sourceIsNotPlayer(source)) return 0;
         try {
             String categoryName = StringArgumentType.getString(ctx, "category");
             MobCategory category = Arrays.stream(MobCategory.values())
@@ -909,13 +854,12 @@ public class LocateCommand {
                         + ". Valid: " + String.join(", ", CATEGORIES)));
                 return 0;
             }
-            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
-            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
             ServerLevel world = source.getLevel();
-            List<Entity> entities = EntityQuery.findPersistentByCategoryInRadius(world, category, centre, blockRadius);
+            List<Entity> entities = EntityQuery.findPersistentByCategoryInRange(world, category, centre, chunkRange);
             ResultFormatter.sendPersistentEntityList(source, entities,
-                    categoryName + " (" + radiusChunks + "-chunk radius)",
+                    categoryName + " (" + chunkRange + "-chunk range)",
                     ResultFormatter.dimensionName(world.dimension()));
             return 1;
         } catch (Exception e) {
@@ -929,7 +873,7 @@ public class LocateCommand {
             CommandContext<CommandSourceStack> ctx, boolean lazyOnly, boolean debug) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
-        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        if (RangeFilter.sourceIsNotPlayer(source)) return 0;
         try {
             Identifier id = IdentifierArgument.getId(ctx, "entityType");
             Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
@@ -937,13 +881,12 @@ public class LocateCommand {
                 source.sendFailure(Component.literal("Unknown entity type: " + id));
                 return 0;
             }
-            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
-            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
             ServerLevel world = source.getLevel();
-            var results = EntityQuery.findByTypeInRadius(world, typeOpt.get(), lazyOnly, centre, blockRadius);
+            var results = EntityQuery.findByTypeInRange(world, typeOpt.get(), lazyOnly, centre, chunkRange);
             ResultFormatter.sendLocateResults(source, results,
-                    id + " (" + radiusChunks + "-chunk radius)",
+                    id + " (" + chunkRange + "-chunk range)",
                     ResultFormatter.dimensionName(world.dimension()), lazyOnly, debug);
             return 1;
         } catch (Exception e) {
@@ -956,14 +899,13 @@ public class LocateCommand {
     private static int executeEntityCensus(CommandContext<CommandSourceStack> ctx) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
-        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        if (RangeFilter.sourceIsNotPlayer(source)) return 0;
         try {
-            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
-            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
             ServerLevel world = source.getLevel();
-            var counts = EntityQuery.countAllEntitiesInRadius(world, centre, blockRadius);
-            ResultFormatter.sendEntityCensus(source, counts, radiusChunks);
+            var counts = EntityQuery.countAllEntitiesInRange(world, centre, chunkRange);
+            ResultFormatter.sendEntityCensus(source, counts, chunkRange);
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in entity census", e);
@@ -974,7 +916,7 @@ public class LocateCommand {
 
     private static int executeProfileRadius(CommandContext<CommandSourceStack> ctx, int ticks) {
         CommandSourceStack source = ctx.getSource();
-        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        if (RangeFilter.sourceIsNotPlayer(source)) return 0;
         try {
             Identifier id = IdentifierArgument.getId(ctx, "entityType");
             Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
@@ -982,11 +924,10 @@ public class LocateCommand {
                 source.sendFailure(Component.literal("Unknown entity type: " + id));
                 return 0;
             }
-            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
-            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
-            EntityProfiler.INSTANCE.startWithRadius(source, typeOpt.get(), ticks,
-                    centre, source.getLevel().dimension(), blockRadius);
+            EntityProfiler.INSTANCE.startWithRange(source, typeOpt.get(), ticks,
+                    centre, source.getLevel().dimension(), chunkRange);
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile radius", e);
@@ -997,13 +938,12 @@ public class LocateCommand {
 
     private static int executeProfileAll(CommandContext<CommandSourceStack> ctx, int ticks) {
         CommandSourceStack source = ctx.getSource();
-        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        if (RangeFilter.sourceIsNotPlayer(source)) return 0;
         try {
-            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
-            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
             EntityProfiler.INSTANCE.startAllTypes(source, ticks,
-                    centre, source.getLevel().dimension(), blockRadius);
+                    centre, source.getLevel().dimension(), chunkRange);
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile all", e);
@@ -1015,14 +955,13 @@ public class LocateCommand {
     private static int executeItemSummaryRadius(CommandContext<CommandSourceStack> ctx) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
-        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        if (RangeFilter.sourceIsNotPlayer(source)) return 0;
         try {
-            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
-            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
             ServerLevel world = source.getLevel();
-            var counts = EntityQuery.countItemsByTypeInRadius(world, centre, blockRadius);
-            ResultFormatter.sendItemSummary(source, counts, radiusChunks + "-chunk radius");
+            var counts = EntityQuery.countItemsByTypeInRange(world, centre, chunkRange);
+            ResultFormatter.sendItemSummary(source, counts, chunkRange + "-chunk range");
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in item summary radius", e);
@@ -1034,20 +973,19 @@ public class LocateCommand {
     private static int executeItemLocateRadius(CommandContext<CommandSourceStack> ctx, boolean lazyOnly) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
-        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        if (RangeFilter.sourceIsNotPlayer(source)) return 0;
         try {
             Identifier id = IdentifierArgument.getId(ctx, "itemType");
             if (!BuiltInRegistries.ITEM.containsKey(id)) {
                 source.sendFailure(Component.literal("Unknown item: " + id));
                 return 0;
             }
-            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
-            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
             ServerLevel world = source.getLevel();
-            var results = EntityQuery.findItemsByTypeInRadius(world, id, lazyOnly, centre, blockRadius);
+            var results = EntityQuery.findItemsByTypeInRange(world, id, lazyOnly, centre, chunkRange);
             ResultFormatter.sendLocateResults(source, results,
-                    id + " (" + radiusChunks + "-chunk radius)",
+                    id + " (" + chunkRange + "-chunk range)",
                     ResultFormatter.dimensionName(world.dimension()), lazyOnly, false);
             return 1;
         } catch (Exception e) {

@@ -3,8 +3,7 @@
 	"package": "netcrafts.detective.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
-		"EntityTickMixin",
-		"ExampleMixin"
+		"EntityTickMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
