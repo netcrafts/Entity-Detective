@@ -17,24 +17,31 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 ├── mob <category>              — Type-count summary per dimension
 │   │   (monster | creature | ambient | axolotls | water_creature | water_ambient)
 │   │   Flags: --lazy-only, --world, --persistent
-│   │   --lazy-only: individual entity list sorted by distance from spawn
+│   │   Radius: --radius <chunks> [--lazy-only] [--persistent]
 │   └── cap                    — Live mob cap: current vs max, colour-coded saturation
 │
 ├── entity                      — Summary of all entity types by count, per dimension
 │   │   Flags: --lazy-only, --persistent, --world
-│   │   --lazy-only: individual entity list sorted by distance from spawn
-│   │   --persistent: show only persistent mobs
 │   ├── locate <type>          — Locate any entity type (tab-complete from live world)
 │   │       Flags: --lazy-only, --world, --debug
-│   └── profile <type> [ticks] — MSPT profiling of any entity type over a tick window
-│           Default: 100 ticks (5 s) | Min: 20 | Max: 6000
+│   │       Radius: --radius <chunks> [--lazy-only] [--debug]
+│   ├── summary --radius <chunks>
+│   │                          — Census of every entity type within radius (instant)
+│   ├── profile <type> [ticks] — MSPT profiling of one entity type
+│   │       Default: 100 ticks (5 s) | Min: 20 | Max: 6000
+│   │       Radius: --radius <chunks> (snapshots player position at start)
+│   └── profile all [ticks] --radius <chunks>
+│                              — Profile every entity type within radius, sorted by cost
 │
 └── item                       — Dropped item summary per dimension
     │   Flags: --lazy-only, --world
-    │   --lazy-only: individual item entity list sorted by distance from spawn
+    │   Radius: --radius <chunks>
     └── locate <item_id>       — Find chunks with a specific dropped item type
             Flags: --lazy-only, --world
+            Radius: --radius <chunks> [--lazy-only]
 ```
+
+**`--radius` rules:** chunks unit (1–32), player source required, mutually exclusive with `--world`.
 
 ---
 
@@ -78,6 +85,7 @@ Total: 128 entities across 8 types
 | `--lazy-only` | List every individual entity in lazy chunks (no player within 128 blocks), sorted closest to spawn first. Each line is clickable to `/tp`. |
 | `--world <dim>` | Scope to a specific dimension: `overworld`, `nether`, or `end` |
 | `--persistent` | List every persistent mob (name-tagged, holding a picked-up item, leashed, riding a vehicle) individually with exact locations, sorted by distance from spawn. |
+| `--radius <chunks>` | Scope the search to a sphere of the given radius (in chunks, 1–32) centred on your position. Mutually exclusive with `--world`. Requires a player source. |
 
 **Examples:**
 ```
@@ -87,6 +95,9 @@ Total: 128 entities across 8 types
 /entitydetective mob monster --lazy-only --world overworld
 /entitydetective mob monster --lazy-only --persistent
 /entitydetective mob monster --persistent
+/entitydetective mob monster --radius 10
+/entitydetective mob monster --radius 10 --lazy-only
+/entitydetective mob monster --radius 10 --persistent
 ```
 
 **`--lazy-only` output:**
@@ -144,12 +155,41 @@ Find all entities of a specific type across all loaded dimensions. Works on **an
 /entitydetective entity locate minecraft:bee --world overworld
 /entitydetective entity locate minecraft:bee --debug
 /entitydetective entity locate minecraft:item_frame --lazy-only --world overworld --debug
+/entitydetective entity locate minecraft:item_frame --radius 8
+/entitydetective entity locate minecraft:item_frame --radius 8 --lazy-only
+```
+
+| Flag | Description |
+|------|-------------|
+| `--lazy-only` | Only show entities in lazy chunks. |
+| `--world <dim>` | Scope to one dimension. |
+| `--debug` | Expand each chunk to show individual entity coordinates, type, name, and persistence reason. |
+| `--radius <chunks>` | Scope results to a sphere around your position (1–32 chunks). Mutually exclusive with `--world`. |
+
+---
+
+### `/entitydetective entity summary --radius <chunks>`
+Instant census — counts **every entity type** within the given radius around your position, sorted by count descending. No tick window required. Useful for getting a quick overview of what is at your base before deciding whether to profile it.
+
+```
+/entitydetective entity summary --radius 10
+```
+
+Output:
+```
+-- Entity Census: 10-chunk radius: 423 entities --
+  minecraft:item_frame          312
+  minecraft:dropped_item         83
+  minecraft:armor_stand          18
+  minecraft:villager              6
+  minecraft:chest_minecart        4
+Total: 423 entities across 5 types
 ```
 
 ---
 
-### `/entitydetective entity profile <type> [<ticks>]`
-Time how many milliseconds per tick all entities of a given type collectively consume, measured over a rolling window of server ticks. Results are sent automatically when the window completes. Works on **any entity type** — useful for diagnosing MSPT spikes from mobs, item frames, boats, or any other entity.
+### `/entitydetective entity profile <type> [<ticks>] [--radius <chunks>]`
+Time how many milliseconds per tick all entities of a given type collectively consume, measured over a rolling window of server ticks. Results are sent automatically when the window completes. Works on **any entity type**.
 
 | Parameter | Default | Min | Max |
 |-----------|---------|-----|-----|
@@ -159,13 +199,38 @@ Time how many milliseconds per tick all entities of a given type collectively co
 /entitydetective entity profile minecraft:zombie
 /entitydetective entity profile minecraft:zombie 200
 /entitydetective entity profile minecraft:item_frame
+/entitydetective entity profile minecraft:item_frame --radius 8
+/entitydetective entity profile minecraft:item_frame 200 --radius 8
 ```
+
+Without `--radius`, all entities of that type across all dimensions are measured.  
+With `--radius`, only entities within the given chunk radius of your position at command-issue time are measured.
 
 Output after the sample window:
 - **Avg. tick cost** — average ms/tick spent ticking all entities of this type
 - **Avg. count** — average number of entities ticked per tick during the window
 - **Total sampled** — total entity-ticks observed
 - Per-dimension breakdown when entities span multiple worlds
+
+---
+
+### `/entitydetective entity profile all [<ticks>] --radius <chunks>`
+Profile **every** entity type within the given radius, sorted by MSPT cost descending. Answers the question: *what is my base costing the server?* `--radius` is required — no world-wide all-types profiling is intentionally supported (that would just reflect global server load, not your base).
+
+```
+/entitydetective entity profile all --radius 10
+/entitydetective entity profile all --radius 10 200
+```
+
+Output:
+```
+-- Base Profile: 10-chunk radius (100 ticks) --
+  minecraft:item_frame                        0.847ms/tick   312.0 entities/tick
+  minecraft:armor_stand                       0.214ms/tick    18.0 entities/tick
+  minecraft:villager                          0.109ms/tick     6.0 entities/tick
+  minecraft:chest_minecart                    0.012ms/tick     4.0 entities/tick
+TOTAL                                         1.182ms/tick   340.0 entities/tick
+```
 
 > Profiling technique adapted from [fabric-carpet](https://github.com/gnembon/fabric-carpet)'s `CarpetProfiler`.
 
@@ -188,6 +253,7 @@ List all loaded **item entities** (dropped items on the ground) grouped by item 
 /entitydetective item --world overworld
 /entitydetective item --lazy-only
 /entitydetective item --lazy-only --world overworld
+/entitydetective item --radius 10
 ```
 
 Default output per dimension shows entity count, total item quantity, and colour-coded severity per type:
@@ -213,6 +279,12 @@ Find which chunks contain a specific item entity type, sorted by concentration. 
 |------|-------------|
 | `--lazy-only` | Only show items in lazy chunks (no player nearby). Useful for finding accumulated drops far from spawn. |
 | `--world <dim>` | Limit search to a specific dimension. |
+| `--radius <chunks>` | Scope results to a sphere around your position (1–32 chunks). Mutually exclusive with `--world`. |
+
+```
+/entitydetective item locate minecraft:cobblestone --radius 10
+/entitydetective item locate minecraft:cobblestone --radius 10 --lazy-only
+```
 
 ---
 
@@ -268,6 +340,21 @@ A mob is considered **persistent** when it will not naturally despawn even if it
 By default, `/entitydetective mob <category>` **excludes** persistent mobs (they never contribute to mob cap pressure). Use `--persistent` to see only them.
 
 > Tip: combine `--lazy-only` and `--persistent` to find the worst offenders — mobs that are both outside player range *and* flagged to never despawn.
+
+### Radius search explained
+
+Any command that accepts `--radius <chunks>` scopes the search to a **sphere** centred on your current position with a radius of `N × 16` blocks (one chunk = 16 blocks). This lets you focus on a specific base or farm rather than the entire loaded world.
+
+**Rules:**
+- **Unit:** chunks, not blocks (1–32). Example: `--radius 10` = 160-block sphere.
+- **Player source required.** Radius commands must be run by a player in-game. They cannot be run from the server console or by command blocks.
+- **Mutually exclusive with `--world`.** Use one or the other, not both.
+- **Snapshot position.** For profiling commands, your position is captured when the command is issued. Moving during the measurement window does not change the profiling radius.
+
+**Typical workflow — diagnosing a laggy base:**
+1. Stand at your base and run `/entitydetective entity summary --radius 10` to get a quick entity census.
+2. If the count looks high, run `/entitydetective entity profile all --radius 10` to see which type costs the most MSPT.
+3. Drill in with `/entitydetective entity profile minecraft:item_frame --radius 10` for a longer, more accurate reading.
 
 ---
 

@@ -18,6 +18,15 @@ import java.util.function.Consumer;
  * EntityProfiler. One start-time field per Level instance ensures timing
  * is correct when multiple dimensions are loaded (serial tick per level).
  *
+ * Supports two profiling modes:
+ * <ul>
+ *   <li>Single-type: gate is {@link EntityProfiler#shouldTime} — type match, optional radius.</li>
+ *   <li>All-types: gate is {@link EntityProfiler#shouldTime} — any entity within radius.</li>
+ * </ul>
+ *
+ * The TAIL injection records into either {@link EntityProfiler#record} (single-type,
+ * keyed by dimension) or {@link EntityProfiler#recordByType} (all-types, keyed by type).
+ *
  * Injection technique adapted from fabric-carpet's Level_tickMixin.
  * @see <a href="https://github.com/gnembon/fabric-carpet">fabric-carpet</a>
  */
@@ -29,16 +38,22 @@ public abstract class EntityTickMixin {
 
     @Inject(method = "guardEntityTick", at = @At("HEAD"))
     private <T extends Entity> void detectiveStartEntityTick(Consumer<T> consumer, T entity, CallbackInfo ci) {
-        if (EntityProfiler.INSTANCE.isTracking(entity.getType())) {
+        if (EntityProfiler.INSTANCE.shouldTime(entity, (Level) (Object) this)) {
             detectiveEntityTickStart = System.nanoTime();
         }
     }
 
     @Inject(method = "guardEntityTick", at = @At("TAIL"))
     private <T extends Entity> void detectiveEndEntityTick(Consumer<T> consumer, T entity, CallbackInfo ci) {
-        if (detectiveEntityTickStart != 0L && EntityProfiler.INSTANCE.isTracking(entity.getType())) {
-            EntityProfiler.INSTANCE.record((Level) (Object) this, System.nanoTime() - detectiveEntityTickStart);
-            detectiveEntityTickStart = 0L;
+        if (detectiveEntityTickStart == 0L) return;
+        long elapsed = System.nanoTime() - detectiveEntityTickStart;
+        detectiveEntityTickStart = 0L;
+        EntityProfiler profiler = EntityProfiler.INSTANCE;
+        if (profiler.isAllTypesMode()) {
+            profiler.recordByType(entity.getType(), elapsed);
+        } else {
+            profiler.record((Level) (Object) this, elapsed);
         }
     }
 }
+

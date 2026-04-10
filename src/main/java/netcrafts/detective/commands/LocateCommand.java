@@ -24,6 +24,7 @@ import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.entity.EntityTypeTest;
+import net.minecraft.world.phys.Vec3;
 
 import netcrafts.detective.EntityDetective;
 import netcrafts.detective.output.ResultFormatter;
@@ -32,6 +33,7 @@ import netcrafts.detective.query.EntityQuery;
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
 import netcrafts.detective.query.EntityQuery.EntityTypeCount;
 import netcrafts.detective.query.MobCapInfo;
+import netcrafts.detective.query.RadiusFilter;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -165,6 +167,20 @@ public class LocateCommand {
                                 .executes(ctx -> executeMobSummary(ctx, StringArgumentType.getString(ctx, "dim"), false))
                             )
                         )
+                        .then(Commands.literal("--radius")
+                            .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                                .executes(ctx -> executeMobSummaryRadius(ctx))
+                                .then(Commands.literal("--lazy-only")
+                                    .executes(ctx -> executeMobLazyListRadius(ctx, false))
+                                    .then(Commands.literal("--persistent")
+                                        .executes(ctx -> executeMobLazyListRadius(ctx, true))
+                                    )
+                                )
+                                .then(Commands.literal("--persistent")
+                                    .executes(ctx -> executeMobPersistentListRadius(ctx))
+                                )
+                            )
+                        )
                     )
                 )
 
@@ -234,16 +250,63 @@ public class LocateCommand {
                                     )
                                 )
                             )
+                            .then(Commands.literal("--radius")
+                                .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                                    .executes(ctx -> executeEntityLocateRadius(ctx, false, false))
+                                    .then(Commands.literal("--lazy-only")
+                                        .executes(ctx -> executeEntityLocateRadius(ctx, true, false))
+                                        .then(Commands.literal("--debug")
+                                            .executes(ctx -> executeEntityLocateRadius(ctx, true, true))
+                                        )
+                                    )
+                                    .then(Commands.literal("--debug")
+                                        .executes(ctx -> executeEntityLocateRadius(ctx, false, true))
+                                    )
+                                )
+                            )
                         )
                     )
 
-                    // entity profile <entityType> [ticks]
+                    // entity summary --radius <n>  — census of all entity types in radius
+                    .then(Commands.literal("summary")
+                        .then(Commands.literal("--radius")
+                            .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                                .executes(ctx -> executeEntityCensus(ctx))
+                            )
+                        )
+                    )
+
+                    // entity profile all [ticks] --radius <n>
+                    // entity profile <type> [ticks] [--radius <n>]
                     .then(Commands.literal("profile")
+                        .then(Commands.literal("all")
+                            .then(Commands.literal("--radius")
+                                .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                                    .executes(ctx -> executeProfileAll(ctx, 100))
+                                    .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
+                                        .executes(ctx -> executeProfileAll(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
+                                    )
+                                )
+                            )
+                        )
                         .then(Commands.argument("entityType", IdentifierArgument.id())
                             .suggests(ENTITY_TYPE_SUGGESTIONS)
                             .executes(ctx -> executeProfile(ctx, 100))
                             .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                 .executes(ctx -> executeProfile(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
+                                .then(Commands.literal("--radius")
+                                    .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                                        .executes(ctx -> executeProfileRadius(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
+                                    )
+                                )
+                            )
+                            .then(Commands.literal("--radius")
+                                .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                                    .executes(ctx -> executeProfileRadius(ctx, 100))
+                                    .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
+                                        .executes(ctx -> executeProfileRadius(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
+                                    )
+                                )
                             )
                         )
                     )
@@ -269,6 +332,11 @@ public class LocateCommand {
                             )
                         )
                     )
+                    .then(Commands.literal("--radius")
+                        .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                            .executes(ctx -> executeItemSummaryRadius(ctx))
+                        )
+                    )
                     .then(Commands.literal("locate")
                         .then(Commands.argument("itemType", IdentifierArgument.id())
                             .suggests(ITEM_TYPE_SUGGESTIONS)
@@ -286,6 +354,14 @@ public class LocateCommand {
                                 .then(Commands.argument("dim", StringArgumentType.word())
                                     .suggests(DIM_SUGGESTIONS)
                                     .executes(ctx -> executeItemLocate(ctx, false, StringArgumentType.getString(ctx, "dim")))
+                                )
+                            )
+                            .then(Commands.literal("--radius")
+                                .then(Commands.argument("radius", IntegerArgumentType.integer(1, RadiusFilter.MAX_RADIUS_CHUNKS))
+                                    .executes(ctx -> executeItemLocateRadius(ctx, false))
+                                    .then(Commands.literal("--lazy-only")
+                                        .executes(ctx -> executeItemLocateRadius(ctx, true))
+                                    )
                                 )
                             )
                         )
@@ -750,6 +826,232 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile command", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Radius executor methods
+    // -------------------------------------------------------------------------
+
+    private static int executeMobSummaryRadius(CommandContext<CommandSourceStack> ctx) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        try {
+            String categoryName = StringArgumentType.getString(ctx, "category");
+            MobCategory category = Arrays.stream(MobCategory.values())
+                    .filter(c -> c.getName().equals(categoryName))
+                    .findFirst().orElse(null);
+            if (category == null || category == MobCategory.MISC) {
+                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                        + ". Valid: " + String.join(", ", CATEGORIES)));
+                return 0;
+            }
+            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            Vec3 centre = source.getPosition();
+            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
+            ServerLevel world = source.getLevel();
+            var counts = EntityQuery.countEntitiesByCategoryInRadius(world, category, false, centre, blockRadius);
+            ResultFormatter.sendMobSummary(source, counts,
+                    categoryName + " (" + radiusChunks + "-chunk radius)",
+                    ResultFormatter.dimensionName(world.dimension()));
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in mob summary radius", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeMobLazyListRadius(CommandContext<CommandSourceStack> ctx, boolean persistent) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        try {
+            String categoryName = StringArgumentType.getString(ctx, "category");
+            MobCategory category = Arrays.stream(MobCategory.values())
+                    .filter(c -> c.getName().equals(categoryName))
+                    .findFirst().orElse(null);
+            if (category == null || category == MobCategory.MISC) {
+                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                        + ". Valid: " + String.join(", ", CATEGORIES)));
+                return 0;
+            }
+            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            Vec3 centre = source.getPosition();
+            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
+            ServerLevel world = source.getLevel();
+            List<Entity> entities = EntityQuery.findLazyByCategoryInRadius(world, category, persistent, centre, blockRadius);
+            ResultFormatter.sendLazyEntityList(source, entities,
+                    categoryName + " (" + radiusChunks + "-chunk radius)",
+                    ResultFormatter.dimensionName(world.dimension()));
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in mob lazy radius", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeMobPersistentListRadius(CommandContext<CommandSourceStack> ctx) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        try {
+            String categoryName = StringArgumentType.getString(ctx, "category");
+            MobCategory category = Arrays.stream(MobCategory.values())
+                    .filter(c -> c.getName().equals(categoryName))
+                    .findFirst().orElse(null);
+            if (category == null || category == MobCategory.MISC) {
+                source.sendFailure(Component.literal("Unknown category: " + categoryName
+                        + ". Valid: " + String.join(", ", CATEGORIES)));
+                return 0;
+            }
+            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            Vec3 centre = source.getPosition();
+            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
+            ServerLevel world = source.getLevel();
+            List<Entity> entities = EntityQuery.findPersistentByCategoryInRadius(world, category, centre, blockRadius);
+            ResultFormatter.sendPersistentEntityList(source, entities,
+                    categoryName + " (" + radiusChunks + "-chunk radius)",
+                    ResultFormatter.dimensionName(world.dimension()));
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in mob persistent radius", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeEntityLocateRadius(
+            CommandContext<CommandSourceStack> ctx, boolean lazyOnly, boolean debug) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        try {
+            Identifier id = IdentifierArgument.getId(ctx, "entityType");
+            Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
+            if (typeOpt.isEmpty()) {
+                source.sendFailure(Component.literal("Unknown entity type: " + id));
+                return 0;
+            }
+            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            Vec3 centre = source.getPosition();
+            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
+            ServerLevel world = source.getLevel();
+            var results = EntityQuery.findByTypeInRadius(world, typeOpt.get(), lazyOnly, centre, blockRadius);
+            ResultFormatter.sendLocateResults(source, results,
+                    id + " (" + radiusChunks + "-chunk radius)",
+                    ResultFormatter.dimensionName(world.dimension()), lazyOnly, debug);
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in entity locate radius", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeEntityCensus(CommandContext<CommandSourceStack> ctx) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        try {
+            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            Vec3 centre = source.getPosition();
+            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
+            ServerLevel world = source.getLevel();
+            var counts = EntityQuery.countAllEntitiesInRadius(world, centre, blockRadius);
+            ResultFormatter.sendEntityCensus(source, counts, radiusChunks);
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in entity census", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeProfileRadius(CommandContext<CommandSourceStack> ctx, int ticks) {
+        CommandSourceStack source = ctx.getSource();
+        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        try {
+            Identifier id = IdentifierArgument.getId(ctx, "entityType");
+            Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
+            if (typeOpt.isEmpty()) {
+                source.sendFailure(Component.literal("Unknown entity type: " + id));
+                return 0;
+            }
+            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            Vec3 centre = source.getPosition();
+            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
+            EntityProfiler.INSTANCE.startWithRadius(source, typeOpt.get(), ticks,
+                    centre, source.getLevel().dimension(), blockRadius);
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile radius", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeProfileAll(CommandContext<CommandSourceStack> ctx, int ticks) {
+        CommandSourceStack source = ctx.getSource();
+        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        try {
+            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            Vec3 centre = source.getPosition();
+            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
+            EntityProfiler.INSTANCE.startAllTypes(source, ticks,
+                    centre, source.getLevel().dimension(), blockRadius);
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile all", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeItemSummaryRadius(CommandContext<CommandSourceStack> ctx) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        try {
+            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            Vec3 centre = source.getPosition();
+            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
+            ServerLevel world = source.getLevel();
+            var counts = EntityQuery.countItemsByTypeInRadius(world, centre, blockRadius);
+            ResultFormatter.sendItemSummary(source, counts, radiusChunks + "-chunk radius");
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in item summary radius", e);
+            source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
+            return 0;
+        }
+    }
+
+    private static int executeItemLocateRadius(CommandContext<CommandSourceStack> ctx, boolean lazyOnly) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        if (RadiusFilter.sourceIsNotPlayer(source)) return 0;
+        try {
+            Identifier id = IdentifierArgument.getId(ctx, "itemType");
+            if (!BuiltInRegistries.ITEM.containsKey(id)) {
+                source.sendFailure(Component.literal("Unknown item: " + id));
+                return 0;
+            }
+            int radiusChunks = IntegerArgumentType.getInteger(ctx, "radius");
+            Vec3 centre = source.getPosition();
+            double blockRadius = RadiusFilter.toBlockRadius(radiusChunks);
+            ServerLevel world = source.getLevel();
+            var results = EntityQuery.findItemsByTypeInRadius(world, id, lazyOnly, centre, blockRadius);
+            ResultFormatter.sendLocateResults(source, results,
+                    id + " (" + radiusChunks + "-chunk radius)",
+                    ResultFormatter.dimensionName(world.dimension()), lazyOnly, false);
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in item locate radius", e);
             source.sendFailure(Component.literal("An internal error occurred. Check server logs."));
             return 0;
         }

@@ -266,28 +266,32 @@ public class ResultFormatter {
     // -------------------------------------------------------------------------
 
     /**
-     * Sends the result of an entity tick profiling session.
+     * Sends the result of a single-type entity tick profiling session.
      *
      * @param source        who to send results to
      * @param type          the profiled entity type
      * @param ticks         the sample window (total ticks)
+     * @param radiusChunks  chunk radius used during profiling; 0 means no radius restriction
      * @param perDim        per-dimension data: [0] total nanos, [1] total entity-ticks
      */
     public static void sendProfileResults(
             CommandSourceStack source,
             EntityType<?> type,
             int ticks,
+            int radiusChunks,
             Map<ResourceKey<Level>, long[]> perDim) {
 
         @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
         String label = id != null ? id.toString() : type.getDescriptionId();
+
+        String radiusNote = radiusChunks > 0 ? " [" + radiusChunks + "-chunk radius]" : "";
 
         double divider = 1.0 / ticks / 1_000_000.0; // nanos per tick → ms per tick
         long totalNanos = perDim.values().stream().mapToLong(d -> d[0]).sum();
         long totalCount = perDim.values().stream().mapToLong(d -> d[1]).sum();
 
         source.sendSuccess(() -> Component.literal(
-                String.format("-- Entity Profile: %s (%d ticks) --", label, ticks))
+                String.format("-- Entity Profile: %s%s (%d ticks) --", label, radiusNote, ticks))
                 .withStyle(ChatFormatting.GOLD), false);
 
         if (totalCount == 0) {
@@ -326,6 +330,102 @@ public class ResultFormatter {
             source.sendSuccess(() -> Component.literal("  Dimension: " + dimName)
                     .withStyle(ChatFormatting.GRAY), false);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity census (entity summary --radius)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Sends a census of all entity types within a radius.
+     *
+     * @param radiusChunks  the radius used, shown in the header
+     */
+    public static void sendEntityCensus(
+            CommandSourceStack source,
+            List<EntityTypeCount> counts,
+            int radiusChunks) {
+
+        long total = counts.stream().mapToLong(EntityTypeCount::count).sum();
+
+        if (total == 0) {
+            source.sendSuccess(() -> Component.literal(
+                    "No entities found within " + radiusChunks + "-chunk radius.")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "-- Entity Census: " + radiusChunks + "-chunk radius: " + total + " entities --")
+                .withStyle(ChatFormatting.GOLD), false);
+
+        for (EntityTypeCount row : counts) {
+            MutableComponent rowLine = Component.literal(String.format("  %5d  ", row.count()))
+                    .withStyle(ChatFormatting.WHITE);
+            rowLine.append(Component.literal(row.typeId().toString()).withStyle(ChatFormatting.GREEN));
+            source.sendSuccess(() -> rowLine, false);
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "Total: " + total + " entities across " + counts.size() + " types")
+                .withStyle(ChatFormatting.GRAY), false);
+    }
+
+    // -------------------------------------------------------------------------
+    // All-types base profile (entity profile all --radius)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Sends the result of an all-types profiling session (entity profile all --radius).
+     * Rows are sorted by descending MSPT cost.
+     *
+     * @param radiusChunks  chunk radius used, shown in the header
+     * @param perType       per-type data: [0] total nanos, [1] total entity-ticks
+     */
+    public static void sendBaseProfileResults(
+            CommandSourceStack source,
+            int ticks,
+            int radiusChunks,
+            Map<EntityType<?>, long[]> perType) {
+
+        source.sendSuccess(() -> Component.literal(
+                String.format("-- Base Profile: %d-chunk radius (%d ticks) --", radiusChunks, ticks))
+                .withStyle(ChatFormatting.GOLD), false);
+
+        long totalNanos = perType.values().stream().mapToLong(d -> d[0]).sum();
+        long totalCount = perType.values().stream().mapToLong(d -> d[1]).sum();
+
+        if (totalCount == 0) {
+            source.sendSuccess(() -> Component.literal(
+                    "  No entities ticked within the radius during the sample window.")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        double divider = 1.0 / ticks / 1_000_000.0;
+
+        // Sort by descending total nanos (= descending MSPT)
+        List<Map.Entry<EntityType<?>, long[]>> sorted = perType.entrySet().stream()
+                .sorted((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]))
+                .toList();
+
+        for (var entry : sorted) {
+            EntityType<?> type = entry.getKey();
+            long[] data = entry.getValue();
+            double ms = divider * data[0];
+            double avgCount = (double) data[1] / ticks;
+            @Nullable Identifier typeId = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+            String label = typeId != null ? typeId.toString() : type.getDescriptionId();
+            source.sendSuccess(() -> Component.literal(
+                    String.format("  %-40s  %8.3fms/tick  %7.1f entities/tick", label, ms, avgCount))
+                    .withStyle(ChatFormatting.WHITE), false);
+        }
+
+        double totalMs = divider * totalNanos;
+        double totalAvg = (double) totalCount / ticks;
+        source.sendSuccess(() -> Component.literal(
+                String.format("  %-40s  %8.3fms/tick  %7.1f entities/tick", "TOTAL", totalMs, totalAvg))
+                .withStyle(ChatFormatting.GOLD), false);
     }
 
     // -------------------------------------------------------------------------

@@ -6,8 +6,10 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 
 import netcrafts.detective.EntityDetective;
 import netcrafts.detective.output.ResultFormatter;
@@ -18,11 +20,18 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Singleton that times entity ticks for a specific EntityType over a configurable
- * window of server ticks, then reports avg MSPT and avg count per tick.
+ * Singleton that manages two profiling modes:
  *
- * Hooks in via {@link netcrafts.detective.mixin.EntityTickMixin} (Level.guardEntityTick)
- * for per-entity timing, and via ServerTickEvents.END_SERVER_TICK for the tick counter.
+ * <ol>
+ *   <li><b>Single-type</b> ({@link #start}) — times one EntityType across all dimensions
+ *       (or within a radius if {@link #startWithRadius} is used).</li>
+ *   <li><b>All-types</b> ({@link #startAllTypes}) — times every entity type within a
+ *       player-defined radius, bucketed by type. Always radius-scoped.</li>
+ * </ol>
+ *
+ * Both modes hook into {@link netcrafts.detective.mixin.EntityTickMixin} via
+ * {@link #shouldTime} and fire results through {@link ResultFormatter} when the
+ * tick window expires.
  *
  * Profiling approach adapted from fabric-carpet's CarpetProfiler.
  * @see <a href="https://github.com/gnembon/fabric-carpet">fabric-carpet</a>
@@ -31,29 +40,85 @@ public class EntityProfiler {
 
     public static final EntityProfiler INSTANCE = new EntityProfiler();
 
+    // -------------------------------------------------------------------------
+    // Shared state
+    // -------------------------------------------------------------------------
+
     private boolean active = false;
-    private EntityType<?> targetType;
     private int ticksRequested;
     private int ticksRemaining;
     private @Nullable CommandSourceStack requester;
 
-    // Per-dimension: [0] = total nanos, [1] = total entity-ticks
+    // -------------------------------------------------------------------------
+    // Single-type mode fields
+    // -------------------------------------------------------------------------
+
+    private @Nullable EntityType<?> targetType;
+    /** Per-dimension: [0] = total nanos, [1] = total entity-ticks */
     private final Map<ResourceKey<Level>, long[]> perDim = new LinkedHashMap<>();
 
+    // -------------------------------------------------------------------------
+    // Radius fields (used by both single-type-with-radius and all-types modes)
+    // -------------------------------------------------------------------------
+
+    private boolean allTypesMode = false;
+    private @Nullable Vec3 radiusCentre;
+    private double radiusSq = 0.0;       // blockRadius^2, precomputed for hot-path use
+    private int radiusChunks = 0;        // stored for display in results header
+    private @Nullable ResourceKey<Level> targetDim;
+
+    // -------------------------------------------------------------------------
+    // All-types mode fields
+    // -------------------------------------------------------------------------
+
+    /** Per-type: [0] = total nanos, [1] = total entity-ticks. Used in allTypesMode only. */
+    private final Map<EntityType<?>, long[]> perType = new LinkedHashMap<>();
+
     private EntityProfiler() {}
+
+    // -------------------------------------------------------------------------
+    // Query methods (called from EntityTickMixin — hot path, must stay cheap)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns true if this entity should be timed this tick.
+     * This is the single gate called from {@link netcrafts.detective.mixin.EntityTickMixin}.
+     */
+    public boolean shouldTime(Entity entity, Level world) {
+        if (!active) return false;
+        if (allTypesMode) {
+            return isInRange(entity, world);
+        } else {
+            // Single-type mode: type must match; if radius is set, position must also match.
+            if (entity.getType() != targetType) return false;
+            if (radiusCentre == null) return true; // no radius restriction
+            return isInRange(entity, world);
+        }
+    }
+
+    /** Returns true if the entity is within the active radius and in the target dimension. */
+    public boolean isInRange(Entity entity, Level world) {
+        if (radiusCentre == null) return false;
+        if (!world.dimension().equals(targetDim)) return false;
+        return entity.distanceToSqr(radiusCentre) <= radiusSq;
+    }
 
     /** Returns true if a profiling session is currently active. */
     public boolean isActive() {
         return active;
     }
 
-    /** Returns true if the profiler is running and the given type is the target. */
-    public boolean isTracking(EntityType<?> type) {
-        return active && type == targetType;
+    /** Returns true if the active session is in all-types mode. */
+    public boolean isAllTypesMode() {
+        return active && allTypesMode;
     }
 
+    // -------------------------------------------------------------------------
+    // Session start methods
+    // -------------------------------------------------------------------------
+
     /**
-     * Start a profiling session. Sends feedback to the requester.
+     * Start a standard single-type profiling session (no radius restriction).
      * Returns false if a session is already running.
      */
     public boolean start(CommandSourceStack source, EntityType<?> type, int ticks) {
@@ -62,11 +127,11 @@ public class EntityProfiler {
                     "A profile is already running. Wait for it to complete."));
             return false;
         }
+        resetState();
         targetType = type;
         ticksRequested = ticks;
         ticksRemaining = ticks;
         requester = source;
-        perDim.clear();
         active = true;
 
         @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
@@ -77,11 +142,77 @@ public class EntityProfiler {
     }
 
     /**
-     * Record an entity tick measurement. Called from EntityTickMixin at TAIL of
-     * Level.guardEntityTick when the entity type matches the target.
-     *
-     * @param world  the Level the entity belongs to
-     * @param nanos  elapsed nanoseconds for this entity's tick
+     * Start a single-type profiling session restricted to a spatial radius.
+     * Returns false if a session is already running.
+     */
+    public boolean startWithRadius(
+            CommandSourceStack source,
+            EntityType<?> type,
+            int ticks,
+            Vec3 centre,
+            ResourceKey<Level> dim,
+            double blockRadius) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        targetType = type;
+        radiusCentre = centre;
+        radiusSq = blockRadius * blockRadius;
+        radiusChunks = (int) (blockRadius / 16);
+        targetDim = dim;
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+
+        @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+        String label = id != null ? id.toString() : type.getDescriptionId();
+        source.sendSuccess(() -> Component.literal(
+                "Profiling " + label + " within " + radiusChunks + " chunks for " + ticks + " ticks..."), false);
+        return true;
+    }
+
+    /**
+     * Start an all-types profiling session within the given radius.
+     * Returns false if a session is already running.
+     */
+    public boolean startAllTypes(
+            CommandSourceStack source,
+            int ticks,
+            Vec3 centre,
+            ResourceKey<Level> dim,
+            double blockRadius) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        allTypesMode = true;
+        radiusCentre = centre;
+        radiusSq = blockRadius * blockRadius;
+        radiusChunks = (int) (blockRadius / 16);
+        targetDim = dim;
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+
+        source.sendSuccess(() -> Component.literal(
+                "Profiling all entity types within " + radiusChunks + " chunks for " + ticks + " ticks..."), false);
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // Recording methods (called from EntityTickMixin — hot path)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Record a single-type entity tick measurement, bucketed by dimension.
+     * Called from EntityTickMixin when allTypesMode is false.
      */
     public void record(Level world, long nanos) {
         if (!active) return;
@@ -89,6 +220,21 @@ public class EntityProfiler {
         data[0] += nanos;
         data[1]++;
     }
+
+    /**
+     * Record an all-types entity tick measurement, bucketed by entity type.
+     * Called from EntityTickMixin when allTypesMode is true.
+     */
+    public void recordByType(EntityType<?> type, long nanos) {
+        if (!active) return;
+        long[] data = perType.computeIfAbsent(type, k -> new long[2]);
+        data[0] += nanos;
+        data[1]++;
+    }
+
+    // -------------------------------------------------------------------------
+    // Tick counter
+    // -------------------------------------------------------------------------
 
     /** Called from ServerTickEvents.END_SERVER_TICK each tick to advance the counter. */
     public void onServerTick(MinecraftServer server) {
@@ -99,13 +245,32 @@ public class EntityProfiler {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Internal
+    // -------------------------------------------------------------------------
+
+    private void resetState() {
+        allTypesMode = false;
+        targetType = null;
+        radiusCentre = null;
+        radiusSq = 0.0;
+        radiusChunks = 0;
+        targetDim = null;
+        perDim.clear();
+        perType.clear();
+    }
+
     private void finalize(MinecraftServer server) {
         active = false;
         CommandSourceStack src = requester;
         requester = null;
         if (src == null) return;
         try {
-            ResultFormatter.sendProfileResults(src, targetType, ticksRequested, perDim);
+            if (allTypesMode) {
+                ResultFormatter.sendBaseProfileResults(src, ticksRequested, radiusChunks, perType);
+            } else {
+                ResultFormatter.sendProfileResults(src, targetType, ticksRequested, radiusChunks, perDim);
+            }
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: error sending profile results", e);
             src.sendFailure(Component.literal(
