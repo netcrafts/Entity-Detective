@@ -30,6 +30,11 @@ dependencies {
 
 	// Permissions API — allows LuckPerms/other plugins to control who can run commands
 	include(implementation('me.lucko:fabric-permissions-api:0.7.0'))
+
+	// Testing
+	testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+	testImplementation 'org.mockito:mockito-core:5.14.2'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 processResources {
@@ -43,6 +48,10 @@ processResources {
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 25
 	it.options.compilerArgs += ['-Xlint:deprecation']
+}
+
+test {
+	useJUnitPlatform()
 }
 
 java {
