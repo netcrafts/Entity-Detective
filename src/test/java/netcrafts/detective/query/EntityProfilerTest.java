@@ -185,7 +185,7 @@ class EntityProfilerTest {
     void shouldTime_returnsTrueWhenActiveTypeMatchesAndNoDimRestriction() throws Exception {
         activateSingleType(mockEntityType, /*targetDim=*/ null);
 
-        when(mockEntity.getType()).thenAnswer(inv -> mockEntityType);
+        when(mockEntity.getType()).thenReturn(mockEntityType);
 
         assertTrue(PROFILER.shouldTime(mockEntity, mockLevel));
     }
@@ -194,7 +194,7 @@ class EntityProfilerTest {
     void shouldTime_returnsFalseWhenActiveTypeMismatch() throws Exception {
         activateSingleType(mockEntityType, /*targetDim=*/ null);
 
-        when(mockEntity.getType()).thenAnswer(inv -> otherEntityType);
+        when(mockEntity.getType()).thenReturn(otherEntityType);
 
         assertFalse(PROFILER.shouldTime(mockEntity, mockLevel));
     }

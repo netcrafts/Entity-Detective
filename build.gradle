@@ -52,6 +52,17 @@ tasks.withType(JavaCompile).configureEach {
 
 test {
 	useJUnitPlatform()
+	// Mockito's ByteBuddy instrumenter requires these on Java 21+.
+	// -XX:+EnableDynamicAgentLoading: lets ByteBuddy self-attach as a JVM agent at
+	//   runtime (Java 21 demotes this to a warning; Java 25+ may make it an error
+	//   without the flag).
+	// --add-opens java.base/java.lang: gives ByteBuddy reflective access to
+	//   Object-derived classes so it can generate and load mock subclasses despite
+	//   the module system's strong encapsulation.
+	jvmArgs(
+		'-XX:+EnableDynamicAgentLoading',
+		'--add-opens', 'java.base/java.lang=ALL-UNNAMED',
+	)
 }
 
 java {

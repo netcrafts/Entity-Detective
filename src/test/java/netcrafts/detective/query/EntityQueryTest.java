@@ -43,6 +43,25 @@ class EntityQueryTest {
     private Entity mockEntity;
 
     // ------------------------------------------------------------------
+    // Cached reflection handles for private static methods
+    // ------------------------------------------------------------------
+
+    private static final Method TO_CHUNK_COORD;
+    private static final Method IN_CHUNK_RANGE;
+
+    static {
+        try {
+            TO_CHUNK_COORD = EntityQuery.class.getDeclaredMethod("toChunkCoord", double.class);
+            TO_CHUNK_COORD.setAccessible(true);
+            IN_CHUNK_RANGE = EntityQuery.class.getDeclaredMethod(
+                    "inChunkRange", Entity.class, int.class, int.class, int.class);
+            IN_CHUNK_RANGE.setAccessible(true);
+        } catch (NoSuchMethodException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    // ------------------------------------------------------------------
     // toChunkCoord (private static) — world-space → chunk-space
     // ------------------------------------------------------------------
 
@@ -264,20 +283,15 @@ class EntityQueryTest {
     }
 
     // ------------------------------------------------------------------
-    // Reflection helpers for private static methods
+    // Reflection helpers — delegates to the cached Method handles above
     // ------------------------------------------------------------------
 
     private static int toChunkCoord(double worldCoord) throws Exception {
-        Method m = EntityQuery.class.getDeclaredMethod("toChunkCoord", double.class);
-        m.setAccessible(true);
-        return (int) m.invoke(null, worldCoord);
+        return (int) TO_CHUNK_COORD.invoke(null, worldCoord);
     }
 
     private static boolean inChunkRange(
             Entity entity, int pcx, int pcz, int chunkRange) throws Exception {
-        Method m = EntityQuery.class.getDeclaredMethod(
-                "inChunkRange", Entity.class, int.class, int.class, int.class);
-        m.setAccessible(true);
-        return (boolean) m.invoke(null, entity, pcx, pcz, chunkRange);
+        return (boolean) IN_CHUNK_RANGE.invoke(null, entity, pcx, pcz, chunkRange);
     }
 }
