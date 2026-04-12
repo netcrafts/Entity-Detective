@@ -235,6 +235,88 @@ public class EntityQuery {
     }
 
     /**
+     * Counts entities of the given MobCategory in lazy chunks, grouped by entity type.
+     * If persistentOnly is true, counts only persistent mobs; otherwise counts all lazy
+     * mobs (including persistent ones, matching what the old flat-list showed).
+     * Results are sorted descending by count.
+     */
+    public static List<EntityTypeCount> countLazyByCategory(
+            ServerLevel world, MobCategory category, boolean persistentOnly) {
+        ArrayList<Entity> all = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            if (entity.getType().getCategory() != category) return false;
+            if (!ChunkStatusUtil.isLazy(world, entity)) return false;
+            if (!persistentOnly) return true;
+            return entity instanceof Mob mob
+                    && (mob.isPersistenceRequired()
+                        || mob.requiresCustomPersistence()
+                        || mob.isPassenger()
+                        || mob.isLeashed());
+        }, all);
+        Map<Identifier, long[]> counts = new LinkedHashMap<>();
+        for (Entity entity : all) {
+            @Nullable Identifier key = entityTypeKey(entity);
+            if (key == null) continue;
+            counts.computeIfAbsent(key, k -> new long[]{0L})[0] += 1;
+        }
+        return counts.entrySet().stream()
+                .map(e -> new EntityTypeCount(e.getKey(), e.getValue()[0]))
+                .sorted(Comparator.<EntityTypeCount>comparingLong(r -> -r.count()))
+                .toList();
+    }
+
+    /**
+     * Counts all entity types in lazy chunks.
+     * If persistentOnly is true, counts only persistent mobs.
+     * Results are sorted descending by count.
+     */
+    public static List<EntityTypeCount> countLazyEntities(ServerLevel world, boolean persistentOnly) {
+        ArrayList<Entity> all = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            if (!ChunkStatusUtil.isLazy(world, entity)) return false;
+            if (!persistentOnly) return true;
+            return entity instanceof Mob mob
+                    && (mob.isPersistenceRequired()
+                        || mob.requiresCustomPersistence()
+                        || mob.isPassenger()
+                        || mob.isLeashed());
+        }, all);
+        Map<Identifier, long[]> counts = new LinkedHashMap<>();
+        for (Entity entity : all) {
+            @Nullable Identifier key = entityTypeKey(entity);
+            if (key == null) continue;
+            counts.computeIfAbsent(key, k -> new long[]{0L})[0] += 1;
+        }
+        return counts.entrySet().stream()
+                .map(e -> new EntityTypeCount(e.getKey(), e.getValue()[0]))
+                .sorted(Comparator.<EntityTypeCount>comparingLong(r -> -r.count()))
+                .toList();
+    }
+
+    /**
+     * Counts item entities in lazy chunks, grouped by item type.
+     * Each row contains entity count and total item count (stack × quantity).
+     * Results are sorted descending by item total.
+     */
+    public static List<ItemTypeCount> countLazyItemsByType(ServerLevel world) {
+        ArrayList<ItemEntity> all = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(ItemEntity.class),
+                ie -> ChunkStatusUtil.isLazy(world, ie), all);
+        Map<Identifier, long[]> counts = new LinkedHashMap<>();
+        for (ItemEntity ie : all) {
+            @Nullable Identifier key = itemEntityKey(ie);
+            if (key == null) continue;
+            long[] row = counts.computeIfAbsent(key, k -> new long[]{0L, 0L});
+            row[0] += 1;
+            row[1] += ie.getItem().getCount();
+        }
+        return counts.entrySet().stream()
+                .map(e -> new ItemTypeCount(e.getKey(), e.getValue()[0], e.getValue()[1]))
+                .sorted(Comparator.<ItemTypeCount>comparingLong(r -> -r.itemTotal()))
+                .toList();
+    }
+
+    /**
      * Returns all lazy entities of the given MobCategory, sorted by squared XZ distance
      * from spawn (0, 0). If persistent is true, also applies persistent filter.
      */
@@ -390,6 +472,44 @@ public class EntityQuery {
     }
 
     /**
+     * Counts entities of the given MobCategory in lazy chunks within chunkRange of centre,
+     * grouped by entity type. Used by mob &lt;category&gt; --range --lazy-only (summary mode).
+     * If persistentOnly is true, counts only persistent mobs.
+     */
+    public static List<EntityTypeCount> countLazyByCategoryInRange(
+            ServerLevel world,
+            MobCategory category,
+            boolean persistentOnly,
+            Vec3 centre,
+            int chunkRange) {
+
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
+        ArrayList<Entity> all = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            if (entity.getType().getCategory() != category) return false;
+            if (!inChunkRange(entity, pcx, pcz, chunkRange)) return false;
+            if (!ChunkStatusUtil.isLazy(world, entity)) return false;
+            if (!persistentOnly) return true;
+            return entity instanceof Mob mob
+                    && (mob.isPersistenceRequired()
+                        || mob.requiresCustomPersistence()
+                        || mob.isPassenger()
+                        || mob.isLeashed());
+        }, all);
+        Map<Identifier, long[]> counts = new LinkedHashMap<>();
+        for (Entity entity : all) {
+            @Nullable Identifier key = entityTypeKey(entity);
+            if (key == null) continue;
+            counts.computeIfAbsent(key, k -> new long[]{0L})[0] += 1;
+        }
+        return counts.entrySet().stream()
+                .map(e -> new EntityTypeCount(e.getKey(), e.getValue()[0]))
+                .sorted(Comparator.<EntityTypeCount>comparingLong(r -> -r.count()))
+                .toList();
+    }
+
+    /**
      * Returns lazy entities of the given category within chunkRange of centre.
      * Used by mob &lt;category&gt; --range --lazy-only.
      */
@@ -528,6 +648,129 @@ public class EntityQuery {
         return counts.entrySet().stream()
                 .map(e -> new ItemTypeCount(e.getKey(), e.getValue()[0], e.getValue()[1]))
                 .sorted(Comparator.<ItemTypeCount>comparingLong(r -> -r.itemTotal()))
+                .toList();
+    }
+
+    /**
+     * Finds entities of the given MobCategory within chunkRange of centre, grouped by chunk.
+     * Used by mob &lt;category&gt; --range --detail.
+     * persistentOnly=true  → only persistent mobs
+     * persistentOnly=false → only non-persistent mobs
+     */
+    public static List<QueryResult> findByCategoryInRange(
+            ServerLevel world,
+            MobCategory category,
+            boolean lazyOnly,
+            boolean persistentOnly,
+            Vec3 centre,
+            int chunkRange) {
+
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
+        Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
+        ArrayList<Entity> matched = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            if (entity.getType().getCategory() != category) return false;
+            if (!inChunkRange(entity, pcx, pcz, chunkRange)) return false;
+            boolean isPersistent = entity instanceof Mob mob
+                    && (mob.isPersistenceRequired()
+                        || mob.requiresCustomPersistence()
+                        || mob.isPassenger()
+                        || mob.isLeashed());
+            return persistentOnly == isPersistent;
+        }, matched);
+
+        for (Entity entity : matched) {
+            if (lazyOnly && !ChunkStatusUtil.isLazy(world, entity)) continue;
+            ChunkPos pos = ChunkPos.containing(entity.blockPosition());
+            byChunk.computeIfAbsent(pos, k -> new ArrayList<>()).add(entity);
+        }
+        return byChunk.entrySet().stream()
+                .map(e -> new QueryResult(e.getKey(), e.getValue()))
+                .sorted(Comparator.comparingInt(r -> -r.entities().size()))
+                .toList();
+    }
+
+    /**
+     * Finds all entities of any type, grouped by chunk.
+     * Used by entity --detail and entity --lazy-only --detail.
+     * persistentOnly=true  → only persistent mobs
+     * persistentOnly=false → all entities (not filtered by persistence)
+     */
+    public static List<QueryResult> findAllEntitiesGrouped(
+            ServerLevel world,
+            boolean lazyOnly,
+            boolean persistentOnly) {
+
+        Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
+        ArrayList<Entity> matched = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
+            if (persistentOnly) {
+                return entity instanceof Mob mob
+                        && (mob.isPersistenceRequired()
+                            || mob.requiresCustomPersistence()
+                            || mob.isPassenger()
+                            || mob.isLeashed());
+            }
+            return true;
+        }, matched);
+
+        for (Entity entity : matched) {
+            if (lazyOnly && !ChunkStatusUtil.isLazy(world, entity)) continue;
+            ChunkPos pos = ChunkPos.containing(entity.blockPosition());
+            byChunk.computeIfAbsent(pos, k -> new ArrayList<>()).add(entity);
+        }
+        return byChunk.entrySet().stream()
+                .map(e -> new QueryResult(e.getKey(), e.getValue()))
+                .sorted(Comparator.comparingInt(r -> -r.entities().size()))
+                .toList();
+    }
+
+    /**
+     * Finds all item entities, optionally limited to lazy chunks, grouped by chunk.
+     * Used by item --detail and item --lazy-only --detail.
+     */
+    public static List<QueryResult> findAllItemEntitiesGrouped(ServerLevel world, boolean lazyOnly) {
+        Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
+        ArrayList<ItemEntity> matched = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(ItemEntity.class), ie -> true, matched);
+
+        for (ItemEntity ie : matched) {
+            if (lazyOnly && !ChunkStatusUtil.isLazy(world, ie)) continue;
+            ChunkPos pos = ChunkPos.containing(ie.blockPosition());
+            byChunk.computeIfAbsent(pos, k -> new ArrayList<>()).add(ie);
+        }
+        return byChunk.entrySet().stream()
+                .map(e -> new QueryResult(e.getKey(), e.getValue()))
+                .sorted(Comparator.comparingInt(r -> -r.entities().size()))
+                .toList();
+    }
+
+    /**
+     * Finds all item entities within chunkRange of centre, grouped by chunk.
+     * Used by item --range --detail.
+     */
+    public static List<QueryResult> findAllItemEntitiesInRange(
+            ServerLevel world,
+            boolean lazyOnly,
+            Vec3 centre,
+            int chunkRange) {
+
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
+        Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
+        ArrayList<ItemEntity> matched = new ArrayList<>();
+        world.getEntities(EntityTypeTest.forClass(ItemEntity.class),
+                ie -> inChunkRange(ie, pcx, pcz, chunkRange), matched);
+
+        for (ItemEntity ie : matched) {
+            if (lazyOnly && !ChunkStatusUtil.isLazy(world, ie)) continue;
+            ChunkPos pos = ChunkPos.containing(ie.blockPosition());
+            byChunk.computeIfAbsent(pos, k -> new ArrayList<>()).add(ie);
+        }
+        return byChunk.entrySet().stream()
+                .map(e -> new QueryResult(e.getKey(), e.getValue()))
+                .sorted(Comparator.comparingInt(r -> -r.entities().size()))
                 .toList();
     }
 

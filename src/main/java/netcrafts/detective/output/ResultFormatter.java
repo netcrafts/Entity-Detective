@@ -88,7 +88,7 @@ public class ResultFormatter {
             String label,
             String dimName,
             boolean lazyOnly,
-            boolean debug) {
+            boolean detail) {
 
         // 5.5.13 — use long to avoid overflow on servers with large entity counts
         long totalEntities = results.stream().mapToLong(r -> r.entities().size()).sum();
@@ -111,7 +111,7 @@ public class ResultFormatter {
         for (int i = 0; i < shown; i++) {
             QueryResult r = results.get(i);
             source.sendSuccess(() -> formatChunkLine(r), false);
-            if (debug) {
+            if (detail) {
                 for (Entity entity : r.entities()) {
                     source.sendSuccess(() -> formatEntityDebugLine(entity), false);
                 }
@@ -263,27 +263,27 @@ public class ResultFormatter {
      * @param source        who to send results to
      * @param type          the profiled entity type
      * @param ticks         the sample window (total ticks)
-     * @param radiusChunks  chunk range used during profiling; 0 means no range restriction
+     * @param chunkRange  chunk range used during profiling; 0 means no range restriction
      * @param perDim        per-dimension data: [0] total nanos, [1] total entity-ticks
      */
     public static void sendProfileResults(
             CommandSourceStack source,
             EntityType<?> type,
             int ticks,
-            int radiusChunks,
+            int chunkRange,
             Map<ResourceKey<Level>, long[]> perDim) {
 
         @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
         String label = id != null ? id.toString() : type.getDescriptionId();
 
-        String radiusNote = radiusChunks > 0 ? " [" + radiusChunks + "-chunk range]" : "";
+        String rangeNote = chunkRange > 0 ? " [" + chunkRange + "-chunk range]" : "";
 
         double divider = 1.0 / ticks / 1_000_000.0; // nanos per tick → ms per tick
         long totalNanos = perDim.values().stream().mapToLong(d -> d[0]).sum();
         long totalCount = perDim.values().stream().mapToLong(d -> d[1]).sum();
 
         source.sendSuccess(() -> Component.literal(
-                String.format("-- Entity Profile: %s%s (%d ticks) --", label, radiusNote, ticks))
+                String.format("-- Entity Profile: %s%s (%d ticks) --", label, rangeNote, ticks))
                 .withStyle(ChatFormatting.GOLD), false);
 
         if (totalCount == 0) {
@@ -297,10 +297,10 @@ public class ResultFormatter {
         double avgCount = (double) totalCount / ticks;
 
         source.sendSuccess(() -> Component.literal(
-                String.format("  Avg. tick cost:  %.3fms / tick", avgMs))
+                String.format("  Avg. tick cost:  %.3fmspt", avgMs))
                 .withStyle(ChatFormatting.WHITE), false);
         source.sendSuccess(() -> Component.literal(
-                String.format("  Avg. count:      %.1f entities / tick", avgCount))
+                String.format("  Avg. count:      %.3f entities/tick", avgCount))
                 .withStyle(ChatFormatting.WHITE), false);
         source.sendSuccess(() -> Component.literal(
                 String.format("  Total sampled:   %d entity-ticks", totalCount))
@@ -313,7 +313,7 @@ public class ResultFormatter {
                 double dimMs       = divider * data[0];
                 double dimAvgCount = (double) data[1] / ticks;
                 source.sendSuccess(() -> Component.literal(
-                        String.format("  %-12s %.3fms/tick,  %.1f entities/tick",
+                        String.format("  %-12s %.3fmspt  avg: %.3f entities/tick",
                                 dimName + ":", dimMs, dimAvgCount))
                         .withStyle(ChatFormatting.AQUA), false);
             }
@@ -331,24 +331,24 @@ public class ResultFormatter {
     /**
      * Sends a census of all entity types within a chunk range.
      *
-     * @param radiusChunks  the range used, shown in the header
+     * @param chunkRange  the range used, shown in the header
      */
     public static void sendEntityCensus(
             CommandSourceStack source,
             List<EntityTypeCount> counts,
-            int radiusChunks) {
+            int chunkRange) {
 
         long total = counts.stream().mapToLong(EntityTypeCount::count).sum();
 
         if (total == 0) {
             source.sendSuccess(() -> Component.literal(
-                    "No entities found within " + radiusChunks + "-chunk range.")
+                    "No entities found within " + chunkRange + "-chunk range.")
                     .withStyle(ChatFormatting.YELLOW), false);
             return;
         }
 
         source.sendSuccess(() -> Component.literal(
-                "-- Entity Census: " + radiusChunks + "-chunk range: " + total + " entities --")
+                "-- Entity Census: " + chunkRange + "-chunk range: " + total + " entities --")
                 .withStyle(ChatFormatting.GOLD), false);
 
         for (EntityTypeCount row : counts) {
@@ -371,20 +371,16 @@ public class ResultFormatter {
      * Sends the result of an all-types profiling session (entity profile all --range).
      * Rows are sorted by descending MSPT cost.
      *
-     * @param radiusChunks  chunk range used, shown in the header
      * @param perType       per-type data: [0] total nanos, [1] total entity-ticks
      */
     public static void sendBaseProfileResults(
             CommandSourceStack source,
             int ticks,
-            int radiusChunks,
+            String scopeLabel,
             Map<EntityType<?>, long[]> perType) {
 
-        int side = 2 * radiusChunks + 1;
-        int totalChunks = side * side;
         source.sendSuccess(() -> Component.literal(
-                String.format("-- Base Profile: %d chunks profiled (%dx%d area centered on player, %d ticks) --",
-                        totalChunks, side, side, ticks))
+                String.format("-- Base Profile: %s (%d ticks) --", scopeLabel, ticks))
                 .withStyle(ChatFormatting.GOLD), false);
 
         long totalNanos = perType.values().stream().mapToLong(d -> d[0]).sum();
@@ -392,7 +388,7 @@ public class ResultFormatter {
 
         if (totalCount == 0) {
             source.sendSuccess(() -> Component.literal(
-                    "  No entities ticked within the range during the sample window.")
+                    "  No entities ticked during the sample window.")
                     .withStyle(ChatFormatting.YELLOW), false);
             return;
         }
@@ -409,18 +405,120 @@ public class ResultFormatter {
             long[] data = entry.getValue();
             double ms = divider * data[0];
             double avgCount = (double) data[1] / ticks;
+            double msPerEntity = avgCount > 0 ? ms / avgCount : 0.0;
             @Nullable Identifier typeId = BuiltInRegistries.ENTITY_TYPE.getKey(type);
-            String label = typeId != null ? typeId.toString() : type.getDescriptionId();
+            String fullId = typeId != null ? typeId.toString() : type.getDescriptionId();
+            String shortName = typeId != null
+                    ? ("minecraft".equals(typeId.getNamespace()) ? typeId.getPath() : fullId)
+                    : fullId;
             source.sendSuccess(() -> Component.literal(
-                    String.format("  %-40s  %8.3fms/tick  %7.1f entities/tick", label, ms, avgCount))
+                    String.format("  %5.0f  %-30s  %.3fmspt  avg: %.3fms",
+                            avgCount, shortName, ms, msPerEntity))
                     .withStyle(ChatFormatting.WHITE), false);
         }
 
         double totalMs = divider * totalNanos;
         double totalAvg = (double) totalCount / ticks;
         source.sendSuccess(() -> Component.literal(
-                String.format("  %-40s  %8.3fms/tick  %7.1f entities/tick", "TOTAL", totalMs, totalAvg))
+                String.format("  %5.0f  %-30s  %.3fmspt", totalAvg, "TOTAL", totalMs))
                 .withStyle(ChatFormatting.GOLD), false);
+    }
+
+    // -------------------------------------------------------------------------
+    // Chunk-grouped detail view (--detail on mob / entity / item)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Sends a chunk-grouped detail listing for mob / entity / item commands when --detail is used.
+     * Each chunk is a clickable /tp line; each entity line is a clickable /tp with
+     * persistence reason shown only when the entity is actually persistent.
+     */
+    public static void sendChunkGroupedDetail(
+            CommandSourceStack source,
+            List<QueryResult> results,
+            String label,
+            String dimName) {
+
+        long totalEntities = results.stream().mapToLong(r -> r.entities().size()).sum();
+
+        if (totalEntities == 0) {
+            source.sendSuccess(() -> Component.literal(
+                    "No " + label + " entities found in " + dimName + " (--detail).")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        String header = String.format("-- %s [%s] (--detail): %d entities in %d chunks --",
+                label, dimName, totalEntities, results.size());
+        source.sendSuccess(() -> Component.literal(header).withStyle(ChatFormatting.GOLD), false);
+
+        int shown = Math.min(results.size(), MAX_CHUNKS_SHOWN);
+        for (int i = 0; i < shown; i++) {
+            QueryResult r = results.get(i);
+            source.sendSuccess(() -> formatDetailChunkLine(r), false);
+            for (Entity entity : r.entities()) {
+                source.sendSuccess(() -> formatDetailEntityLine(entity), false);
+            }
+        }
+
+        if (results.size() > MAX_CHUNKS_SHOWN) {
+            int remaining = results.size() - MAX_CHUNKS_SHOWN;
+            source.sendSuccess(() -> Component.literal("  ...and " + remaining + " more chunks.")
+                    .withStyle(ChatFormatting.GRAY), false);
+        }
+
+        long finalTotal = totalEntities;
+        source.sendSuccess(() -> Component.literal("Total: " + finalTotal + " entities")
+                .withStyle(ChatFormatting.GRAY), false);
+    }
+
+    private static MutableComponent formatDetailChunkLine(QueryResult r) {
+        ChunkPos pos = r.chunkPos();
+        int count = r.entities().size();
+        int midX = pos.getMiddleBlockX();
+        int midZ = pos.getMiddleBlockZ();
+        String tpCmd = String.format("/tp @s %d ~ %d", midX, midZ);
+        ClickEvent click = new ClickEvent.SuggestCommand(tpCmd);
+        String text = String.format("  Chunk (%d, %d)  \u00d7  %d  \u2192  /tp @s %d ~ %d",
+                pos.x(), pos.z(), count, midX, midZ);
+        return Component.literal(text)
+                .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
+    }
+
+    private static MutableComponent formatDetailEntityLine(Entity entity) {
+        String type;
+        if (entity instanceof net.minecraft.world.entity.item.ItemEntity ie) {
+            @Nullable Identifier itemKey = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
+            type = itemKey != null ? itemKey.toString() : "unknown:item";
+        } else {
+            @Nullable Identifier typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            type = typeKey != null ? typeKey.toString() : "unknown:" + entity.getType().getDescriptionId();
+        }
+        net.minecraft.network.chat.Component cn = entity.getCustomName();
+        String name = cn != null ? " \"" + cn.getString() + "\"" : "";
+        String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
+        String tpCmd = String.format("/tp @s %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
+
+        MutableComponent line = Component.literal("    ")
+                .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCmd)));
+        line.append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
+        line.append(Component.literal("  \u2014  ").withStyle(ChatFormatting.WHITE));
+        line.append(Component.literal(type).withStyle(ChatFormatting.GREEN));
+        if (!name.isEmpty()) {
+            line.append(Component.literal(name).withStyle(ChatFormatting.WHITE));
+        }
+        if (isActuallyPersistent(entity)) {
+            line.append(Component.literal("  (" + persistenceReason(entity) + ")").withStyle(ChatFormatting.GRAY));
+        }
+        return line;
+    }
+
+    private static boolean isActuallyPersistent(Entity entity) {
+        return entity instanceof Mob mob
+                && (mob.isPersistenceRequired()
+                    || mob.requiresCustomPersistence()
+                    || mob.isPassenger()
+                    || mob.isLeashed());
     }
 
     // -------------------------------------------------------------------------

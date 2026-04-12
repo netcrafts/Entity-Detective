@@ -89,6 +89,9 @@ public class EntityProfiler {
     public boolean shouldTime(Entity entity, Level world) {
         if (!active) return false;
         if (allTypesMode) {
+            if (targetDim == null) return true; // global all-types: no restriction
+            if (!world.dimension().equals(targetDim)) return false;
+            if (chunkRange < 0) return true;   // whole-dimension mode: dim check is enough
             return isInRange(entity, world);
         } else {
             // Single-type mode: type must match; if range is set, chunk position must also match.
@@ -170,6 +173,54 @@ public class EntityProfiler {
         String label = id != null ? id.toString() : type.getDescriptionId();
         source.sendSuccess(() -> Component.literal(
                 "Profiling " + label + " within " + chunkRange + "-chunk range for " + ticks + " ticks..."), false);
+        return true;
+    }
+
+    /**
+     * Start an all-types profiling session restricted to one dimension (no chunk range).
+     * Returns false if a session is already running.
+     */
+    public boolean startAllTypesDimension(
+            CommandSourceStack source,
+            int ticks,
+            ResourceKey<Level> dim) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        allTypesMode = true;
+        targetDim = dim;
+        chunkRange = -1; // sentinel: whole dimension, no chunk range
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+        String dimName = ResultFormatter.dimensionName(dim);
+        source.sendSuccess(() -> Component.literal(
+                "Profiling all entity types in " + dimName + " for " + ticks + " ticks..."), false);
+        return true;
+    }
+
+    /**
+     * Start an all-types profiling session across ALL loaded entities in ALL dimensions.
+     * Returns false if a session is already running.
+     */
+    public boolean startAllTypesGlobal(CommandSourceStack source, int ticks) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        allTypesMode = true;
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+        source.sendSuccess(() -> Component.literal(
+                "Profiling all entity types (all loaded entities, all dimensions) for " + ticks + " ticks..."), false);
         return true;
     }
 
@@ -267,7 +318,17 @@ public class EntityProfiler {
         if (src == null) return;
         try {
             if (allTypesMode) {
-                ResultFormatter.sendBaseProfileResults(src, ticksRequested, chunkRange, perType);
+                String scopeLabel;
+                if (targetDim == null) {
+                    scopeLabel = "all loaded entities, all dimensions";
+                } else if (chunkRange < 0) {
+                    scopeLabel = "all entities in " + ResultFormatter.dimensionName(targetDim);
+                } else {
+                    int side = 2 * chunkRange + 1;
+                    scopeLabel = chunkRange + "-chunk range (" + side + "x" + side + ") in "
+                            + ResultFormatter.dimensionName(targetDim);
+                }
+                ResultFormatter.sendBaseProfileResults(src, ticksRequested, scopeLabel, perType);
             } else {
                 ResultFormatter.sendProfileResults(src, targetType, ticksRequested, chunkRange, perDim);
             }
