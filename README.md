@@ -47,7 +47,7 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 2. Drop `entity-detective-<version>.jar` into your `mods/` folder  
 3. No client mod required — server-side only
 
-**Permissions:** requires op level 2 by default. If [LuckPerms](https://luckperms.net/) is present, grant the node `entitydetective.command` instead.
+**Permissions:** The singleplayer world owner can use all commands without enabling cheats. On a dedicated server, op level 2 is required by default. If [LuckPerms](https://luckperms.net/) is present, grant the node `entitydetective.command` instead.
 
 ---
 
@@ -129,7 +129,7 @@ A mob **won't naturally despawn** if it has been name-tagged, has picked up a gr
 
 | Node | Default | Description |
 |------|---------|-------------|
-| `entitydetective.command` | op level 2 | Access to all `/entitydetective` commands |
+| `entitydetective.command` | op level 2 | Access to all `/entitydetective` commands. Singleplayer world owner always has access regardless of cheat setting. |
 
 ---
 

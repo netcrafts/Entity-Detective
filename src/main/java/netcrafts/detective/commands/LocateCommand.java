@@ -17,6 +17,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -133,7 +134,22 @@ public class LocateCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
             Commands.literal("entitydetective")
-                .requires(Permissions.require("entitydetective.command", PermissionLevel.GAMEMASTERS))
+                .requires(source -> {
+                    // Guard: during command tree serialization the server reference can be null
+                    if (source.getServer() == null) return false;
+                    // Singleplayer world owner always has access regardless of cheat/op setting
+                    if (source.getServer().isSingleplayer()) {
+                        Entity e = source.getEntity();
+                        if (e instanceof ServerPlayer sp
+                                && source.getServer().isSingleplayerOwner(sp.nameAndId())) {
+                            return true;
+                        }
+                    }
+                    // Dedicated server or LAN guest: LuckPerms node or op level 2
+                    @SuppressWarnings("deprecation")
+                    boolean permitted = Permissions.check(source, "entitydetective.command", 2);
+                    return permitted;
+                })
 
                 // /entitydetective mob cap
                 // /entitydetective mob <category> [--lazy-only] [--persistent] [--world <dim>] [--detail]
