@@ -100,10 +100,10 @@ Total: 45 entities across 3 types
 ```
 ```
 -- Base Profile: 10-chunk range (100 ticks) --
-  312  item_frame       0.847mspt  avg: 0.003ms
-   18  armor_stand      0.214mspt  avg: 0.012ms
-    6  villager         0.109mspt  avg: 0.018ms
-  340  TOTAL            1.182mspt
+  312  item_frame                       0.847mspt  avg:   0.003ms
+   18  armor_stand                      0.214mspt  avg:   0.012ms
+    6  villager                         0.109mspt  avg:   0.018ms
+  340  TOTAL                            1.182mspt
 ```
 Drill in: `/entitydetective entity profile minecraft:item_frame 200 --range 10`
 

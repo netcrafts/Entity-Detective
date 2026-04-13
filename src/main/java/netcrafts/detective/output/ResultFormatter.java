@@ -412,15 +412,15 @@ public class ResultFormatter {
                     ? ("minecraft".equals(typeId.getNamespace()) ? typeId.getPath() : fullId)
                     : fullId;
             source.sendSuccess(() -> Component.literal(
-                    String.format("  %5.0f  %-30s  %.3fmspt  avg: %.3fms",
-                            avgCount, shortName, ms, msPerEntity))
+                    String.format("  %7.3fmspt  avg: %6.3fms  %s \u00d7%.0f",
+                            ms, msPerEntity, shortName, avgCount))
                     .withStyle(ChatFormatting.WHITE), false);
         }
 
         double totalMs = divider * totalNanos;
         double totalAvg = (double) totalCount / ticks;
         source.sendSuccess(() -> Component.literal(
-                String.format("  %5.0f  %-30s  %.3fmspt", totalAvg, "TOTAL", totalMs))
+                String.format("  %7.3fmspt  TOTAL \u00d7%.0f", totalMs, totalAvg))
                 .withStyle(ChatFormatting.GOLD), false);
     }
 
