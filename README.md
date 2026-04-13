@@ -138,8 +138,8 @@ A mob **won't naturally despawn** if it has been name-tagged, has picked up a gr
 | Dependency | Version |
 |------------|---------|
 | Minecraft | 26.1.x |
-| Fabric Loader | ≥ 0.18.6 |
-| Fabric API | ≥ 0.145.3+26.1.1 (built against 26.1.1) |
+| Fabric Loader | ≥ 0.19.1 |
+| Fabric API | ≥ 0.145.4+26.1.2 |
 | LuckPerms | optional |
 
 ---
