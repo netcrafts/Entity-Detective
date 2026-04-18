@@ -14,6 +14,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -22,6 +23,7 @@ import netcrafts.detective.query.EntityQuery.EntityTypeCount;
 import netcrafts.detective.query.EntityQuery.QueryResult;
 import netcrafts.detective.query.MobCapInfo.CategoryInfo;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -293,32 +295,108 @@ public class ResultFormatter {
             return;
         }
 
-        double avgMs    = divider * totalNanos;
-        double avgCount = (double) totalCount / ticks;
+        double totalMs    = divider * totalNanos;
+        double perEntityMs = totalNanos / (double) totalCount / 1_000_000.0;
+        double avgCount   = (double) totalCount / ticks;
 
         source.sendSuccess(() -> Component.literal(
-                String.format("  Avg. tick cost:  %.3fmspt", avgMs))
+                String.format("  Total tick cost:  %.3fmspt", totalMs))
                 .withStyle(ChatFormatting.WHITE), false);
         source.sendSuccess(() -> Component.literal(
-                String.format("  Avg. count:      %.3f entities/tick", avgCount))
+                String.format("  Avg. tick cost:   %.3fms / entity", perEntityMs))
                 .withStyle(ChatFormatting.WHITE), false);
         source.sendSuccess(() -> Component.literal(
-                String.format("  Total sampled:   %d entity-ticks", totalCount))
-                .withStyle(ChatFormatting.GRAY), false);
+                String.format("  Avg. count:       %.1f entities/tick", avgCount))
+                .withStyle(ChatFormatting.WHITE), false);
 
         if (perDim.size() > 1) {
             for (var entry : perDim.entrySet()) {
                 String dimName = dimensionName(entry.getKey());
                 long[] data = entry.getValue();
-                double dimMs       = divider * data[0];
-                double dimAvgCount = (double) data[1] / ticks;
+                double dimMs        = divider * data[0];
+                double dimPerEntity = data[0] / (double) data[1] / 1_000_000.0;
+                double dimAvgCount  = (double) data[1] / ticks;
                 source.sendSuccess(() -> Component.literal(
-                        String.format("  %-12s %.3fmspt  avg: %.3f entities/tick",
-                                dimName + ":", dimMs, dimAvgCount))
+                        String.format("  %-12s %.3fmspt  avg: %.3fms  \u00d7%.1f",
+                                dimName + ":", dimMs, dimPerEntity, dimAvgCount))
                         .withStyle(ChatFormatting.AQUA), false);
             }
         } else if (!perDim.isEmpty()) {
             String dimName = dimensionName(perDim.keySet().iterator().next());
+            source.sendSuccess(() -> Component.literal("  Dimension: " + dimName)
+                    .withStyle(ChatFormatting.GRAY), false);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Single-BE-type profile
+    // -------------------------------------------------------------------------
+
+    /**
+     * Sends the result of a single-block-entity-type profiling session.
+     * Mirrors {@link #sendProfileResults} but resolves the type name via the BE registry.
+     *
+     * @param source        who to send results to
+     * @param type          the profiled block entity type
+     * @param ticks         the sample window (total ticks)
+     * @param chunkRange    chunk range used during profiling; 0 means no range restriction
+     * @param perBEDim      per-dimension data: [0] total nanos, [1] total BE-ticks
+     */
+    public static void sendBEProfileResults(
+            CommandSourceStack source,
+            BlockEntityType<?> type,
+            int ticks,
+            int chunkRange,
+            Map<ResourceKey<Level>, long[]> perBEDim) {
+
+        @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
+        String label = id != null ? id.toString() : type.toString();
+
+        String rangeNote = chunkRange > 0 ? " [" + chunkRange + "-chunk range]" : "";
+
+        double divider = 1.0 / ticks / 1_000_000.0;
+        long totalNanos = perBEDim.values().stream().mapToLong(d -> d[0]).sum();
+        long totalCount = perBEDim.values().stream().mapToLong(d -> d[1]).sum();
+
+        source.sendSuccess(() -> Component.literal(
+                String.format("-- BE Profile: %s%s (%d ticks) --", label, rangeNote, ticks))
+                .withStyle(ChatFormatting.GOLD), false);
+
+        if (totalCount == 0) {
+            source.sendSuccess(() -> Component.literal(
+                    "  No block entities of this type were ticked during the sample window.")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        double totalMs    = divider * totalNanos;
+        double perBEMs    = totalNanos / (double) totalCount / 1_000_000.0;
+        double avgCount   = (double) totalCount / ticks;
+
+        source.sendSuccess(() -> Component.literal(
+                String.format("  Total tick cost:  %.3fmspt", totalMs))
+                .withStyle(ChatFormatting.WHITE), false);
+        source.sendSuccess(() -> Component.literal(
+                String.format("  Avg. tick cost:   %.3fms / BE", perBEMs))
+                .withStyle(ChatFormatting.WHITE), false);
+        source.sendSuccess(() -> Component.literal(
+                String.format("  Avg. count:       %.1f BEs/tick", avgCount))
+                .withStyle(ChatFormatting.WHITE), false);
+
+        if (perBEDim.size() > 1) {
+            for (var entry : perBEDim.entrySet()) {
+                String dimName = dimensionName(entry.getKey());
+                long[] data = entry.getValue();
+                double dimMs        = divider * data[0];
+                double dimPerBE     = data[0] / (double) data[1] / 1_000_000.0;
+                double dimAvgCount  = (double) data[1] / ticks;
+                source.sendSuccess(() -> Component.literal(
+                        String.format("  %-12s %.3fmspt  avg: %.3fms  \u00d7%.1f",
+                                dimName + ":", dimMs, dimPerBE, dimAvgCount))
+                        .withStyle(ChatFormatting.AQUA), false);
+            }
+        } else if (!perBEDim.isEmpty()) {
+            String dimName = dimensionName(perBEDim.keySet().iterator().next());
             source.sendSuccess(() -> Component.literal("  Dimension: " + dimName)
                     .withStyle(ChatFormatting.GRAY), false);
         }
@@ -369,51 +447,65 @@ public class ResultFormatter {
 
     /**
      * Sends the result of an all-types profiling session (entity profile all --range).
-     * Rows are sorted by descending MSPT cost.
+     * Merges entity types and block entity types into a single list sorted by descending MSPT cost.
      *
-     * @param perType       per-type data: [0] total nanos, [1] total entity-ticks
+     * @param perType   per-entity-type data: [0] total nanos, [1] total ticks
+     * @param perBEType per-block-entity-type data: [0] total nanos, [1] total ticks
      */
     public static void sendBaseProfileResults(
             CommandSourceStack source,
             int ticks,
             String scopeLabel,
-            Map<EntityType<?>, long[]> perType) {
+            Map<EntityType<?>, long[]> perType,
+            Map<BlockEntityType<?>, long[]> perBEType) {
 
         source.sendSuccess(() -> Component.literal(
                 String.format("-- Base Profile: %s (%d ticks) --", scopeLabel, ticks))
                 .withStyle(ChatFormatting.GOLD), false);
 
-        long totalNanos = perType.values().stream().mapToLong(d -> d[0]).sum();
-        long totalCount = perType.values().stream().mapToLong(d -> d[1]).sum();
+        // Build a unified list of (displayName, nanos, ticks) records
+        record ProfileRow(String name, long nanos, long count) {}
+        List<ProfileRow> rows = new ArrayList<>();
+
+        for (var entry : perType.entrySet()) {
+            @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(entry.getKey());
+            String name = id != null
+                    ? ("minecraft".equals(id.getNamespace()) ? id.getPath() : id.toString())
+                    : entry.getKey().getDescriptionId();
+            rows.add(new ProfileRow(name, entry.getValue()[0], entry.getValue()[1]));
+        }
+
+        for (var entry : perBEType.entrySet()) {
+            @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(entry.getKey());
+            String rawName = id != null
+                    ? ("minecraft".equals(id.getNamespace()) ? id.getPath() : id.toString())
+                    : entry.getKey().toString();
+            // Prefix block entities to distinguish them from mobs with the same short name
+            String name = "[be] " + rawName;
+            rows.add(new ProfileRow(name, entry.getValue()[0], entry.getValue()[1]));
+        }
+
+        long totalNanos = rows.stream().mapToLong(ProfileRow::nanos).sum();
+        long totalCount = rows.stream().mapToLong(ProfileRow::count).sum();
 
         if (totalCount == 0) {
             source.sendSuccess(() -> Component.literal(
-                    "  No entities ticked during the sample window.")
+                    "  No entities or block entities ticked during the sample window.")
                     .withStyle(ChatFormatting.YELLOW), false);
             return;
         }
 
         double divider = 1.0 / ticks / 1_000_000.0;
 
-        // Sort by descending total nanos (= descending MSPT)
-        List<Map.Entry<EntityType<?>, long[]>> sorted = perType.entrySet().stream()
-                .sorted((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]))
-                .toList();
+        rows.sort((a, b) -> Long.compare(b.nanos(), a.nanos()));
 
-        for (var entry : sorted) {
-            EntityType<?> type = entry.getKey();
-            long[] data = entry.getValue();
-            double ms = divider * data[0];
-            double avgCount = (double) data[1] / ticks;
-            double msPerEntity = avgCount > 0 ? ms / avgCount : 0.0;
-            @Nullable Identifier typeId = BuiltInRegistries.ENTITY_TYPE.getKey(type);
-            String fullId = typeId != null ? typeId.toString() : type.getDescriptionId();
-            String shortName = typeId != null
-                    ? ("minecraft".equals(typeId.getNamespace()) ? typeId.getPath() : fullId)
-                    : fullId;
+        for (ProfileRow row : rows) {
+            double ms = divider * row.nanos();
+            double avgCount = (double) row.count() / ticks;
+            double msPerTick = avgCount > 0 ? ms / avgCount : 0.0;
             source.sendSuccess(() -> Component.literal(
                     String.format("  %7.3fmspt  avg: %6.3fms  %s \u00d7%.0f",
-                            ms, msPerEntity, shortName, avgCount))
+                            ms, msPerTick, row.name(), avgCount))
                     .withStyle(ChatFormatting.WHITE), false);
         }
 

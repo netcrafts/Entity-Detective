@@ -1,6 +1,7 @@
 package netcrafts.detective.query;
 
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -10,6 +11,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.phys.Vec3;
 
 import netcrafts.detective.EntityDetective;
@@ -76,6 +79,17 @@ public class EntityProfiler {
     /** Per-type: [0] = total nanos, [1] = total entity-ticks. Used in allTypesMode only. */
     private final Map<EntityType<?>, long[]> perType = new LinkedHashMap<>();
 
+    /** Per-block-entity-type: [0] = total nanos, [1] = total BE-ticks. Used in allTypesMode only. */
+    private final Map<BlockEntityType<?>, long[]> perBEType = new LinkedHashMap<>();
+
+    // -------------------------------------------------------------------------
+    // Single-BE-type mode fields
+    // -------------------------------------------------------------------------
+
+    private @Nullable BlockEntityType<?> targetBEType;
+    /** Per-dimension: [0] = total nanos, [1] = total BE-ticks. Used in single-BE-type mode only. */
+    private final Map<ResourceKey<Level>, long[]> perBEDim = new LinkedHashMap<>();
+
     private EntityProfiler() {}
 
     // -------------------------------------------------------------------------
@@ -112,6 +126,41 @@ public class EntityProfiler {
     /** Returns true if the active session is in all-types mode. */
     public boolean isAllTypesMode() {
         return active && allTypesMode;
+    }
+
+    /**
+     * Returns true if this block entity should be timed this tick.
+     * Called from {@link netcrafts.detective.mixin.BlockEntityTickMixin} — hot path.
+     */
+    public boolean shouldTimeBE(BlockEntity be) {
+        if (!active) return false;
+        Level world = be.getLevel();
+        if (world == null) return false;
+        if (allTypesMode) {
+            if (targetDim != null && !world.dimension().equals(targetDim)) return false;
+            if (chunkRange < 0 || targetDim == null) return true; // whole-dim or global mode
+            BlockPos pos = be.getBlockPos();
+            int cx = pos.getX() >> 4;
+            int cz = pos.getZ() >> 4;
+            return Math.abs(cx - playerChunkX) <= chunkRange
+                    && Math.abs(cz - playerChunkZ) <= chunkRange;
+        } else if (targetBEType != null) {
+            // Single-BE-type mode
+            if (be.getType() != targetBEType) return false;
+            if (targetDim == null) return true; // no range restriction
+            return isInBERange(be, world);
+        }
+        return false;
+    }
+
+    /** Returns true if the block entity's chunk is within the active chunk-square range and dimension. */
+    public boolean isInBERange(BlockEntity be, Level world) {
+        if (!world.dimension().equals(targetDim)) return false;
+        BlockPos pos = be.getBlockPos();
+        int cx = pos.getX() >> 4;
+        int cz = pos.getZ() >> 4;
+        return Math.abs(cx - playerChunkX) <= chunkRange
+                && Math.abs(cz - playerChunkZ) <= chunkRange;
     }
 
     // -------------------------------------------------------------------------
@@ -173,6 +222,64 @@ public class EntityProfiler {
         String label = id != null ? id.toString() : type.getDescriptionId();
         source.sendSuccess(() -> Component.literal(
                 "Profiling " + label + " within " + chunkRange + "-chunk range for " + ticks + " ticks..."), false);
+        return true;
+    }
+
+    /**
+     * Start a single-BE-type profiling session (no range restriction).
+     * Returns false if a session is already running.
+     */
+    public boolean startBE(CommandSourceStack source, BlockEntityType<?> type, int ticks) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        targetBEType = type;
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+
+        @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
+        String label = id != null ? id.toString() : type.toString();
+        source.sendSuccess(() -> Component.literal(
+                "Profiling [be] " + label + " for " + ticks + " ticks..."), false);
+        return true;
+    }
+
+    /**
+     * Start a single-BE-type profiling session restricted to a chunk-square range.
+     * Returns false if a session is already running.
+     */
+    public boolean startBEWithRange(
+            CommandSourceStack source,
+            BlockEntityType<?> type,
+            int ticks,
+            Vec3 centre,
+            ResourceKey<Level> dim,
+            int chunkRange) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        targetBEType = type;
+        playerChunkX = (int) Math.floor(centre.x) >> 4;
+        playerChunkZ = (int) Math.floor(centre.z) >> 4;
+        this.chunkRange = chunkRange;
+        targetDim = dim;
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+
+        @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
+        String label = id != null ? id.toString() : type.toString();
+        source.sendSuccess(() -> Component.literal(
+                "Profiling [be] " + label + " within " + chunkRange + "-chunk range for " + ticks + " ticks..."), false);
         return true;
     }
 
@@ -283,6 +390,24 @@ public class EntityProfiler {
         data[1]++;
     }
 
+    /**
+     * Record a block entity tick measurement.
+     * Routes to {@link #perBEType} in allTypesMode, or {@link #perBEDim} in single-BE-type mode.
+     * Called from BlockEntityTickMixin.
+     */
+    public void recordByBlockEntityType(BlockEntityType<?> type, long nanos, Level world) {
+        if (!active) return;
+        if (allTypesMode) {
+            long[] data = perBEType.computeIfAbsent(type, k -> new long[2]);
+            data[0] += nanos;
+            data[1]++;
+        } else if (targetBEType != null) {
+            long[] data = perBEDim.computeIfAbsent(world.dimension(), k -> new long[2]);
+            data[0] += nanos;
+            data[1]++;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Tick counter
     // -------------------------------------------------------------------------
@@ -303,12 +428,15 @@ public class EntityProfiler {
     private void resetState() {
         allTypesMode = false;
         targetType = null;
+        targetBEType = null;
         playerChunkX = 0;
         playerChunkZ = 0;
         chunkRange = 0;
         targetDim = null;
         perDim.clear();
         perType.clear();
+        perBEType.clear();
+        perBEDim.clear();
     }
 
     private void completeSession() {
@@ -328,7 +456,9 @@ public class EntityProfiler {
                     scopeLabel = chunkRange + "-chunk range (" + side + "x" + side + ") in "
                             + ResultFormatter.dimensionName(targetDim);
                 }
-                ResultFormatter.sendBaseProfileResults(src, ticksRequested, scopeLabel, perType);
+                ResultFormatter.sendBaseProfileResults(src, ticksRequested, scopeLabel, perType, perBEType);
+            } else if (targetBEType != null) {
+                ResultFormatter.sendBEProfileResults(src, targetBEType, ticksRequested, chunkRange, perBEDim);
             } else {
                 ResultFormatter.sendProfileResults(src, targetType, ticksRequested, chunkRange, perDim);
             }

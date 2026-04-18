@@ -25,10 +25,11 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 │   │       Flags: --lazy-only, --world, --detail
 │   │       Range: --range <chunks> [--lazy-only] [--detail]
 │   ├── --range <chunks>       — Census of every entity type within range (instant)
-│   ├── profile <type> [ticks] — MSPT profiling of one entity type
-│   │       Default: 100 ticks (5 s) | Min: 20 | Max: 6000
-│   │       Range: --range <chunks> (snapshots player position at start)
-│   └── profile all [ticks]    — Profile every entity type, sorted by MSPT cost
+   ├── profile <type> [ticks] — MSPT profiling of one entity or block entity type
+   │       Accepts: entity type IDs (e.g. minecraft:zombie) or block entity type IDs (e.g. minecraft:hopper)
+   │       Default: 100 ticks (5 s) | Min: 20 | Max: 6000
+   │       Range: --range <chunks> (snapshots player position at start)
+   └── profile all [ticks]    — Profile every entity and block entity type, sorted by MSPT cost
 │           Bare: all dimensions | --world <dim>: one dimension | --range <chunks>: chunk square
 │
 └── item                       — Dropped item summary per dimension
@@ -100,10 +101,11 @@ Total: 45 entities across 3 types
 ```
 ```
 -- Base Profile: 10-chunk range (100 ticks) --
-  312  item_frame                       0.847mspt  avg:   0.003ms
-   18  armor_stand                      0.214mspt  avg:   0.012ms
-    6  villager                         0.109mspt  avg:   0.018ms
-  340  TOTAL                            1.182mspt
+  0.847mspt  avg:   0.003ms  item_frame ×312
+  0.214mspt  avg:   0.012ms  armor_stand ×18
+  0.182mspt  avg:   0.023ms  [be] hopper ×8
+  0.109mspt  avg:   0.018ms  villager ×6
+  1.352mspt  TOTAL ×344
 ```
 Drill in: `/entitydetective entity profile minecraft:item_frame 200 --range 10`
 

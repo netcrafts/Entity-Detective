@@ -24,6 +24,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.phys.Vec3;
 
@@ -105,6 +106,8 @@ public class LocateCommand {
                     }
                 });
                 String remaining = builder.getRemaining().toLowerCase();
+                // Also include all registered block entity types for BE profiling
+                BuiltInRegistries.BLOCK_ENTITY_TYPE.keySet().forEach(key -> keys.add(key.toString()));
                 keys.stream()
                         .filter(k -> k.toLowerCase().contains(remaining))
                         .forEach(builder::suggest);
@@ -887,12 +890,17 @@ public class LocateCommand {
         try {
             Identifier id = IdentifierArgument.getId(ctx, "entityType");
             Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
-            if (typeOpt.isEmpty()) {
-                source.sendFailure(Component.literal(ERR_ENTITY + id));
-                return 0;
+            if (typeOpt.isPresent()) {
+                EntityProfiler.INSTANCE.start(source, typeOpt.get(), ticks);
+                return 1;
             }
-            EntityProfiler.INSTANCE.start(source, typeOpt.get(), ticks);
-            return 1;
+            Optional<BlockEntityType<?>> beTypeOpt = BuiltInRegistries.BLOCK_ENTITY_TYPE.getOptional(id);
+            if (beTypeOpt.isPresent()) {
+                EntityProfiler.INSTANCE.startBE(source, beTypeOpt.get(), ticks);
+                return 1;
+            }
+            source.sendFailure(Component.literal(ERR_ENTITY + id));
+            return 0;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile command", e);
             source.sendFailure(Component.literal(ERR_INTERNAL));
@@ -1211,16 +1219,22 @@ public class LocateCommand {
         if (RangeFilter.sourceIsNotPlayer(source)) return 0;
         try {
             Identifier id = IdentifierArgument.getId(ctx, "entityType");
-            Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
-            if (typeOpt.isEmpty()) {
-                source.sendFailure(Component.literal(ERR_ENTITY + id));
-                return 0;
-            }
             int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
-            EntityProfiler.INSTANCE.startWithRange(source, typeOpt.get(), ticks,
-                    centre, source.getLevel().dimension(), chunkRange);
-            return 1;
+            Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
+            if (typeOpt.isPresent()) {
+                EntityProfiler.INSTANCE.startWithRange(source, typeOpt.get(), ticks,
+                        centre, source.getLevel().dimension(), chunkRange);
+                return 1;
+            }
+            Optional<BlockEntityType<?>> beTypeOpt = BuiltInRegistries.BLOCK_ENTITY_TYPE.getOptional(id);
+            if (beTypeOpt.isPresent()) {
+                EntityProfiler.INSTANCE.startBEWithRange(source, beTypeOpt.get(), ticks,
+                        centre, source.getLevel().dimension(), chunkRange);
+                return 1;
+            }
+            source.sendFailure(Component.literal(ERR_ENTITY + id));
+            return 0;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile range", e);
             source.sendFailure(Component.literal(ERR_INTERNAL));
