@@ -688,10 +688,36 @@ public class LocateCommand {
         try {
             Identifier id = IdentifierArgument.getId(ctx, "entityType");
             Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
+
+            // Block entity fallback — locate BEs in loaded chunks
             if (typeOpt.isEmpty()) {
-                source.sendFailure(Component.literal(ERR_ENTITY + id));
-                return 0;
+                Optional<BlockEntityType<?>> beTypeOpt = BuiltInRegistries.BLOCK_ENTITY_TYPE.getOptional(id);
+                if (beTypeOpt.isEmpty()) {
+                    source.sendFailure(Component.literal(ERR_ENTITY + id));
+                    return 0;
+                }
+                BlockEntityType<?> beType = beTypeOpt.get();
+                String label = id.toString();
+                List<ServerLevel> beWorlds;
+                if (dimArg == null) {
+                    beWorlds = new java.util.ArrayList<>();
+                    source.getServer().getAllLevels().forEach(beWorlds::add);
+                } else {
+                    ServerLevel beWorld = resolveWorld(source, dimArg);
+                    if (beWorld == null) {
+                        source.sendFailure(Component.literal(ERR_DIM + dimArg));
+                        return 0;
+                    }
+                    beWorlds = List.of(beWorld);
+                }
+                for (ServerLevel beWorld : beWorlds) {
+                    String dimName = ResultFormatter.dimensionName(beWorld.dimension());
+                    var beResults = EntityQuery.findBlockEntitiesByType(beWorld, beType);
+                    ResultFormatter.sendBELocateResults(source, beResults, label, dimName, detail);
+                }
+                return 1;
             }
+
             EntityType<?> entityType = typeOpt.get();
             String label = id.toString();
 
@@ -1177,10 +1203,24 @@ public class LocateCommand {
         try {
             Identifier id = IdentifierArgument.getId(ctx, "entityType");
             Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
+
+            // Block entity fallback
             if (typeOpt.isEmpty()) {
-                source.sendFailure(Component.literal(ERR_ENTITY + id));
-                return 0;
+                Optional<BlockEntityType<?>> beTypeOpt = BuiltInRegistries.BLOCK_ENTITY_TYPE.getOptional(id);
+                if (beTypeOpt.isEmpty()) {
+                    source.sendFailure(Component.literal(ERR_ENTITY + id));
+                    return 0;
+                }
+                int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
+                Vec3 centre = source.getPosition();
+                ServerLevel beWorld = source.getLevel();
+                var beResults = EntityQuery.findBlockEntitiesByTypeInRange(beWorld, beTypeOpt.get(), centre, chunkRange);
+                ResultFormatter.sendBELocateResults(source, beResults,
+                        id + " (" + chunkRange + "-chunk range)",
+                        ResultFormatter.dimensionName(beWorld.dimension()), detail);
+                return 1;
             }
+
             int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
             ServerLevel world = source.getLevel();

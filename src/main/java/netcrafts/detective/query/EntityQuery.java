@@ -9,8 +9,15 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.core.BlockPos;
+
+import netcrafts.detective.access.ChunkMapAccessor;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -25,6 +32,9 @@ import java.util.Map;
 public class EntityQuery {
 
     public record QueryResult(ChunkPos chunkPos, List<Entity> entities) {}
+
+    /** Locate result for block entities: one entry per occupied chunk. */
+    public record BELocateResult(ChunkPos chunkPos, List<BlockPos> positions) {}
 
     /**
      * Summary row for item_summary: one entry per distinct item type.
@@ -592,6 +602,66 @@ public class EntityQuery {
         return byChunk.entrySet().stream()
                 .map(e -> new QueryResult(e.getKey(), e.getValue()))
                 .sorted(Comparator.comparingInt(r -> -r.entities().size()))
+                .toList();
+    }
+
+    // -------------------------------------------------------------------------
+    // Block entity locate
+    // -------------------------------------------------------------------------
+
+    /**
+     * Finds all loaded block entities of the given type in the given dimension,
+     * grouped by chunk, sorted descending by count per chunk.
+     */
+    public static List<BELocateResult> findBlockEntitiesByType(
+            ServerLevel world, BlockEntityType<?> targetType) {
+
+        Map<ChunkPos, List<BlockPos>> byChunk = new HashMap<>();
+        ((ChunkMapAccessor) world.getChunkSource().chunkMap)
+                .detective_allChunksWithAtLeastStatus(ChunkStatus.FULL)
+                .forEach(holder -> {
+                    LevelChunk chunk = holder.getTickingChunk();
+                    if (chunk == null) return;
+                    ChunkPos chunkPos = chunk.getPos();
+                    chunk.getBlockEntitiesPos().forEach(pos -> {
+                        BlockEntity be = chunk.getBlockEntity(pos);
+                        if (be == null || be.getType() != targetType) return;
+                        byChunk.computeIfAbsent(chunkPos, k -> new ArrayList<>()).add(pos);
+                    });
+                });
+        return byChunk.entrySet().stream()
+                .map(e -> new BELocateResult(e.getKey(), e.getValue()))
+                .sorted(Comparator.comparingInt(r -> -r.positions().size()))
+                .toList();
+    }
+
+    /**
+     * Finds block entities of the given type within chunkRange of centre, grouped by chunk.
+     * Used by entity locate &lt;be_type&gt; --range.
+     */
+    public static List<BELocateResult> findBlockEntitiesByTypeInRange(
+            ServerLevel world, BlockEntityType<?> targetType, Vec3 centre, int chunkRange) {
+
+        int pcx = toChunkCoord(centre.x);
+        int pcz = toChunkCoord(centre.z);
+        Map<ChunkPos, List<BlockPos>> byChunk = new HashMap<>();
+        ((ChunkMapAccessor) world.getChunkSource().chunkMap)
+                .detective_allChunksWithAtLeastStatus(ChunkStatus.FULL)
+                .forEach(holder -> {
+                    LevelChunk chunk = holder.getTickingChunk();
+                    if (chunk == null) return;
+                    ChunkPos chunkPos = chunk.getPos();
+                    if (Math.abs(chunkPos.x() - pcx) > chunkRange
+                            || Math.abs(chunkPos.z() - pcz) > chunkRange) return;
+                    chunk.getBlockEntitiesPos().forEach(pos -> {
+                        BlockEntity be = chunk.getBlockEntity(pos);
+                        if (be == null || be.getType() != targetType) return;
+                        byChunk.computeIfAbsent(chunkPos, k -> new ArrayList<>()).add(pos);
+                    });
+                });
+        return byChunk.entrySet().stream()
+                .map(e -> new BELocateResult(e.getKey(), e.getValue()))
+                .sorted(Comparator.comparingInt(r -> -r.positions().size()))
                 .toList();
     }
 

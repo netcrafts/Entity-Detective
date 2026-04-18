@@ -21,8 +21,8 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 ├── entity                      — Summary of all entity types by count, per dimension
 │   │   Flags: --lazy-only, --persistent, --world, --detail
 │   │   Range: --range <chunks>
-│   ├── locate <type>          — Locate any entity type (tab-complete from live world)
-│   │       Flags: --lazy-only, --world, --detail
+│   ├── locate <type>          — Locate entities or block entities by type ID (tab-complete from live world)
+│   │       Flags: --lazy-only (entities only), --world, --detail
 │   │       Range: --range <chunks> [--lazy-only] [--detail]
 │   ├── --range <chunks>       — Census of every entity type within range (instant)
    ├── profile <type> [ticks] — MSPT profiling of one entity or block entity type

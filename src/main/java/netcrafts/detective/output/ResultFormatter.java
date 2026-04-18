@@ -2,6 +2,7 @@ package netcrafts.detective.output;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
@@ -18,6 +19,7 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 
 import org.jetbrains.annotations.Nullable;
 
+import netcrafts.detective.query.EntityQuery.BELocateResult;
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
 import netcrafts.detective.query.EntityQuery.EntityTypeCount;
 import netcrafts.detective.query.EntityQuery.QueryResult;
@@ -180,6 +182,75 @@ public class ResultFormatter {
                 .withStyle(ChatFormatting.WHITE);
 
         return coords.append(countPart);
+    }
+
+    // -------------------------------------------------------------------------
+    // Block entity locate display
+    // -------------------------------------------------------------------------
+
+    public static void sendBELocateResults(
+            CommandSourceStack source,
+            List<BELocateResult> results,
+            String label,
+            String dimName,
+            boolean detail) {
+
+        long total = results.stream().mapToLong(r -> r.positions().size()).sum();
+
+        if (total == 0) {
+            source.sendSuccess(() -> Component.literal(
+                    "No " + label + " block entities found in " + dimName + ".")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        String header = String.format("-- %s [%s]: %d block entities in %d chunks --",
+                label, dimName, total, results.size());
+        source.sendSuccess(() -> Component.literal(header).withStyle(ChatFormatting.GOLD), false);
+
+        int shown = Math.min(results.size(), MAX_CHUNKS_SHOWN);
+        for (int i = 0; i < shown; i++) {
+            BELocateResult r = results.get(i);
+            source.sendSuccess(() -> formatBEChunkLine(r), false);
+            if (detail) {
+                for (BlockPos pos : r.positions()) {
+                    source.sendSuccess(() -> formatBEPosLine(pos), false);
+                }
+            }
+        }
+
+        if (results.size() > MAX_CHUNKS_SHOWN) {
+            int remaining = results.size() - MAX_CHUNKS_SHOWN;
+            source.sendSuccess(() -> Component.literal("  ...and " + remaining + " more chunks.")
+                    .withStyle(ChatFormatting.GRAY), false);
+        }
+    }
+
+    private static MutableComponent formatBEChunkLine(BELocateResult r) {
+        ChunkPos pos = r.chunkPos();
+        int count = r.positions().size();
+        int midX = pos.getMiddleBlockX();
+        int midZ = pos.getMiddleBlockZ();
+
+        String tpCommand = String.format("/tp @s %d ~ %d", midX, midZ);
+        ClickEvent click = new ClickEvent.SuggestCommand(tpCommand);
+
+        MutableComponent coords = Component.literal(
+                String.format("  [%d, %d]", pos.x(), pos.z()))
+                .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
+
+        MutableComponent countPart = Component.literal(" — " + count + " block entities")
+                .withStyle(ChatFormatting.WHITE);
+
+        return coords.append(countPart);
+    }
+
+    private static MutableComponent formatBEPosLine(BlockPos pos) {
+        String coords = String.format("[%d, %d, %d]", pos.getX(), pos.getY(), pos.getZ());
+        String tpCommand = String.format("/tp @s %d %d %d", pos.getX(), pos.getY(), pos.getZ());
+        return Component.literal("    ")
+                .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCommand)))
+                .append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
     }
 
     // -------------------------------------------------------------------------
