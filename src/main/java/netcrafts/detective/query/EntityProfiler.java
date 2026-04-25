@@ -221,7 +221,7 @@ public class EntityProfiler {
         @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
         String label = id != null ? id.toString() : type.getDescriptionId();
         source.sendSuccess(() -> Component.literal(
-                "Profiling " + label + " within " + chunkRange + "-chunk range for " + ticks + " ticks..."), false);
+                "Profiling " + label + (chunkRange == 0 ? " in the player's chunk for " : " within " + chunkRange + "-chunk range for ") + ticks + " ticks..."), false);
         return true;
     }
 
@@ -279,7 +279,7 @@ public class EntityProfiler {
         @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
         String label = id != null ? id.toString() : type.toString();
         source.sendSuccess(() -> Component.literal(
-                "Profiling [be] " + label + " within " + chunkRange + "-chunk range for " + ticks + " ticks..."), false);
+                "Profiling [be] " + label + (chunkRange == 0 ? " in the player's chunk for " : " within " + chunkRange + "-chunk range for ") + ticks + " ticks..."), false);
         return true;
     }
 
@@ -359,8 +359,9 @@ public class EntityProfiler {
 
         int side = 2 * chunkRange + 1;
         int totalChunks = side * side;
+        String areaDesc = chunkRange == 0 ? "1-chunk area" : totalChunks + "-chunk (" + side + "x" + side + ") area";
         source.sendSuccess(() -> Component.literal(
-                "Profiling all entity types in a " + totalChunks + "-chunk (" + side + "x" + side + ") area centered on player for " + ticks + " ticks..."), false);
+                "Profiling all entity types in a " + areaDesc + " centered on player for " + ticks + " ticks..."), false);
         return true;
     }
 
@@ -453,7 +454,7 @@ public class EntityProfiler {
                     scopeLabel = "all entities in " + ResultFormatter.dimensionName(targetDim);
                 } else {
                     int side = 2 * chunkRange + 1;
-                    scopeLabel = chunkRange + "-chunk range (" + side + "x" + side + ") in "
+                    scopeLabel = (chunkRange == 0 ? "1-chunk area" : chunkRange + "-chunk range (" + side + "x" + side + ")") + " in "
                             + ResultFormatter.dimensionName(targetDim);
                 }
                 ResultFormatter.sendBaseProfileResults(src, ticksRequested, scopeLabel, perType, perBEType);

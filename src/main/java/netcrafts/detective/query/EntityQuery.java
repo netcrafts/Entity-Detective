@@ -256,12 +256,12 @@ public class EntityQuery {
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
             if (entity.getType().getCategory() != category) return false;
             if (!ChunkStatusUtil.isLazy(world, entity)) return false;
-            if (!persistentOnly) return true;
-            return entity instanceof Mob mob
+            boolean isPersistent = entity instanceof Mob mob
                     && (mob.isPersistenceRequired()
                         || mob.requiresCustomPersistence()
                         || mob.isPassenger()
                         || mob.isLeashed());
+            return persistentOnly == isPersistent;
         }, all);
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (Entity entity : all) {
@@ -284,12 +284,12 @@ public class EntityQuery {
         ArrayList<Entity> all = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
             if (!ChunkStatusUtil.isLazy(world, entity)) return false;
-            if (!persistentOnly) return true;
-            return entity instanceof Mob mob
+            boolean isPersistent = entity instanceof Mob mob
                     && (mob.isPersistenceRequired()
                         || mob.requiresCustomPersistence()
                         || mob.isPassenger()
                         || mob.isLeashed());
+            return persistentOnly == isPersistent;
         }, all);
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (Entity entity : all) {
@@ -336,12 +336,12 @@ public class EntityQuery {
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
             if (entity.getType().getCategory() != category) return false;
             if (!ChunkStatusUtil.isLazy(world, entity)) return false;
-            if (!persistent) return true;
-            return entity instanceof Mob mob
+            boolean isPersistent = entity instanceof Mob mob
                     && (mob.isPersistenceRequired()
                         || mob.requiresCustomPersistence()
                         || mob.isPassenger()
                         || mob.isLeashed());
+            return persistent == isPersistent;
         }, matched);
         matched.sort(Comparator.comparingDouble(e -> e.getX() * e.getX() + e.getZ() * e.getZ()));
         return matched;
@@ -355,14 +355,12 @@ public class EntityQuery {
         ArrayList<Entity> matched = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
             if (!ChunkStatusUtil.isLazy(world, entity)) return false;
-            if (persistentOnly) {
-                return entity instanceof Mob mob
-                        && (mob.isPersistenceRequired()
-                            || mob.requiresCustomPersistence()
-                            || mob.isPassenger()
-                            || mob.isLeashed());
-            }
-            return true;
+            boolean isPersistent = entity instanceof Mob mob
+                    && (mob.isPersistenceRequired()
+                        || mob.requiresCustomPersistence()
+                        || mob.isPassenger()
+                        || mob.isLeashed());
+            return persistentOnly == isPersistent;
         }, matched);
         matched.sort(Comparator.comparingDouble(e -> e.getX() * e.getX() + e.getZ() * e.getZ()));
         return matched;
@@ -500,12 +498,12 @@ public class EntityQuery {
             if (entity.getType().getCategory() != category) return false;
             if (!inChunkRange(entity, pcx, pcz, chunkRange)) return false;
             if (!ChunkStatusUtil.isLazy(world, entity)) return false;
-            if (!persistentOnly) return true;
-            return entity instanceof Mob mob
+            boolean isPersistent = entity instanceof Mob mob
                     && (mob.isPersistenceRequired()
                         || mob.requiresCustomPersistence()
                         || mob.isPassenger()
                         || mob.isLeashed());
+            return persistentOnly == isPersistent;
         }, all);
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (Entity entity : all) {
@@ -537,12 +535,12 @@ public class EntityQuery {
             if (entity.getType().getCategory() != category) return false;
             if (!inChunkRange(entity, pcx, pcz, chunkRange)) return false;
             if (!ChunkStatusUtil.isLazy(world, entity)) return false;
-            if (!persistent) return true;
-            return entity instanceof Mob mob
+            boolean isPersistent = entity instanceof Mob mob
                     && (mob.isPersistenceRequired()
                         || mob.requiresCustomPersistence()
                         || mob.isPassenger()
                         || mob.isLeashed());
+            return persistent == isPersistent;
         }, matched);
         matched.sort(Comparator.comparingDouble(e -> e.getX() * e.getX() + e.getZ() * e.getZ()));
         return matched;

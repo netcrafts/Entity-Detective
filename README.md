@@ -56,10 +56,10 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 
 | Flag | Description |
 |------|-------------|
-| `--lazy-only` | Filter to entities in **lazy chunks** — no player within 128 blocks. They never despawn. Returns a type-count table; add `--detail` to see individual entities. |
+| `--lazy-only` | Filter to non-persistent entities in **lazy chunks** — no player within 128 blocks. Despawn can't fire so they accumulate silently. Returns a type-count table; add `--detail` to see individual entities. |
 | `--persistent` | Filter to persistent mobs: name-tagged, holding a picked-up item, leashed, or riding a vehicle. Returns a type-count table. |
 | `--world <dim>` | Scope to one dimension: `overworld`, `nether`, or `end`. |
-| `--range <chunks>` | Scope to a (2N+1)×(2N+1) chunk square centred on your position (1–32). Player source required; mutually exclusive with `--world`. |
+| `--range <chunks>` | Scope to a (2N+1)×(2N+1) chunk square centred on your position (0–32). `--range 0` targets the single chunk you are standing in. Player source required; mutually exclusive with `--world`. |
 | `--detail` | Expand output to a chunk-grouped list; each line is a clickable `/tp`. When combined with `--persistent`, shows the persistence reason per entity. **Must be the last flag.** |
 
 ---
@@ -115,7 +115,7 @@ Drill in: `/entitydetective entity profile minecraft:item_frame 200 --range 10`
 
 ### Lazy chunks
 
-Chunks that are loaded but not ticked — no player within 128 blocks — are called **lazy chunks**. Entities there never move, never breed, and never despawn. They accumulate silently until a player enters range. `--lazy-only` filters to entities that fail the 128-block proximity check, showing you what the server will never clean up on its own.
+Chunks that are loaded but not ticked — no player within 128 blocks — are called **lazy chunks**. Entities there never move, never breed, and despawn logic never fires, so they accumulate silently until a player enters range. `--lazy-only` filters to non-persistent entities that fail the 128-block proximity check, showing what the server will never clean up on its own.
 
 ### Persistent mobs
 

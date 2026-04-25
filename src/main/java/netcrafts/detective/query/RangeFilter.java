@@ -12,7 +12,16 @@ import net.minecraft.server.level.ServerPlayer;
  */
 public class RangeFilter {
 
+    public static final int MIN_RANGE_CHUNKS = 0;
     public static final int MAX_RANGE_CHUNKS = 32;
+
+    /**
+     * Returns a human-readable range description.
+     * range 0 → "1-chunk area"; range N → "N-chunk range"
+     */
+    public static String rangeLabel(int n) {
+        return n == 0 ? "1-chunk area" : n + "-chunk range";
+    }
 
     /**
      * Guard: sends a failure message and returns true if the source is not a player.

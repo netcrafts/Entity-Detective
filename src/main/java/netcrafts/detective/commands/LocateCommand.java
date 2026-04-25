@@ -216,7 +216,7 @@ public class LocateCommand {
                             )
                         )
                         .then(Commands.literal("--range")
-                            .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
+                            .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
                                 .executes(ctx -> executeMobSummaryRange(ctx))
                                 .then(Commands.literal("--detail")
                                     .executes(ctx -> executeMobDetailRange(ctx, false, false))
@@ -333,7 +333,7 @@ public class LocateCommand {
                                 )
                             )
                             .then(Commands.literal("--range")
-                                .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
+                                .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
                                     .executes(ctx -> executeEntityLocateRange(ctx, false, false))
                                     .then(Commands.literal("--lazy-only")
                                         .executes(ctx -> executeEntityLocateRange(ctx, true, false))
@@ -349,7 +349,7 @@ public class LocateCommand {
                         )
                     )
                     .then(Commands.literal("--range")
-                        .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
+                        .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
                             .executes(ctx -> executeEntityCensus(ctx))
                         )
                     )
@@ -372,7 +372,7 @@ public class LocateCommand {
                                 )
                             )
                             .then(Commands.literal("--range")
-                                .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
+                                .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
                                     .executes(ctx -> executeProfileAll(ctx, 100))
                                     .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                         .executes(ctx -> executeProfileAll(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
@@ -386,13 +386,13 @@ public class LocateCommand {
                             .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                 .executes(ctx -> executeProfile(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
                                 .then(Commands.literal("--range")
-                                    .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
+                                    .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
                                         .executes(ctx -> executeProfileRange(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
                                     )
                                 )
                             )
                             .then(Commands.literal("--range")
-                                .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
+                                .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
                                     .executes(ctx -> executeProfileRange(ctx, 100))
                                     .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                         .executes(ctx -> executeProfileRange(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
@@ -436,7 +436,7 @@ public class LocateCommand {
                         )
                     )
                     .then(Commands.literal("--range")
-                        .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
+                        .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
                             .executes(ctx -> executeItemSummaryRange(ctx))
                             .then(Commands.literal("--detail")
                                 .executes(ctx -> executeItemDetailRange(ctx, false))
@@ -475,7 +475,7 @@ public class LocateCommand {
                                 )
                             )
                             .then(Commands.literal("--range")
-                                .then(Commands.argument("range", IntegerArgumentType.integer(1, RangeFilter.MAX_RANGE_CHUNKS))
+                                .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
                                     .executes(ctx -> executeItemLocateRange(ctx, false, false))
                                     .then(Commands.literal("--detail")
                                         .executes(ctx -> executeItemLocateRange(ctx, false, true))
@@ -1004,7 +1004,7 @@ public class LocateCommand {
             var results = EntityQuery.findByCategoryInRange(world, category, lazyOnly, persistent, centre, chunkRange);
             String filter = (lazyOnly ? " (lazy)" : "") + (persistent ? " (persistent)" : "");
             ResultFormatter.sendChunkGroupedDetail(source, results,
-                    categoryName + " (" + chunkRange + "-chunk range)" + filter,
+                    categoryName + " (" + RangeFilter.rangeLabel(chunkRange) + ")" + filter,
                     ResultFormatter.dimensionName(world.dimension()));
             return 1;
         } catch (Exception e) {
@@ -1094,7 +1094,7 @@ public class LocateCommand {
             var results = EntityQuery.findAllItemEntitiesInRange(world, lazyOnly, centre, chunkRange);
             String filter = lazyOnly ? " (lazy)" : "";
             ResultFormatter.sendChunkGroupedDetail(source, results,
-                    "item (" + chunkRange + "-chunk range)" + filter,
+                    "item (" + RangeFilter.rangeLabel(chunkRange) + ")" + filter,
                     ResultFormatter.dimensionName(world.dimension()));
             return 1;
         } catch (Exception e) {
@@ -1127,7 +1127,7 @@ public class LocateCommand {
             ServerLevel world = source.getLevel();
             var counts = EntityQuery.countEntitiesByCategoryInRange(world, category, false, centre, chunkRange);
             ResultFormatter.sendMobSummary(source, counts,
-                    categoryName + " (" + chunkRange + "-chunk range)",
+                    categoryName + " (" + RangeFilter.rangeLabel(chunkRange) + ")",
                     ResultFormatter.dimensionName(world.dimension()));
             return 1;
         } catch (Exception e) {
@@ -1155,7 +1155,7 @@ public class LocateCommand {
             Vec3 centre = source.getPosition();
             ServerLevel world = source.getLevel();
             var counts = EntityQuery.countLazyByCategoryInRange(world, category, persistent, centre, chunkRange);
-            String label = categoryName + " (" + chunkRange + "-chunk range)" + (persistent ? " (lazy + persistent)" : " (lazy only)");
+            String label = categoryName + " (" + RangeFilter.rangeLabel(chunkRange) + ")" + (persistent ? " (lazy + persistent)" : " (lazy only)");
             ResultFormatter.sendMobSummary(source, counts, label,
                     ResultFormatter.dimensionName(world.dimension()));
             return 1;
@@ -1185,7 +1185,7 @@ public class LocateCommand {
             ServerLevel world = source.getLevel();
             var counts = EntityQuery.countEntitiesByCategoryInRange(world, category, true, centre, chunkRange);
             ResultFormatter.sendMobSummary(source, counts,
-                    categoryName + " (" + chunkRange + "-chunk range) (persistent)",
+                    categoryName + " (" + RangeFilter.rangeLabel(chunkRange) + ") (persistent)",
                     ResultFormatter.dimensionName(world.dimension()));
             return 1;
         } catch (Exception e) {
@@ -1216,7 +1216,7 @@ public class LocateCommand {
                 ServerLevel beWorld = source.getLevel();
                 var beResults = EntityQuery.findBlockEntitiesByTypeInRange(beWorld, beTypeOpt.get(), centre, chunkRange);
                 ResultFormatter.sendBELocateResults(source, beResults,
-                        id + " (" + chunkRange + "-chunk range)",
+                        id + " (" + RangeFilter.rangeLabel(chunkRange) + ")",
                         ResultFormatter.dimensionName(beWorld.dimension()), detail);
                 return 1;
             }
@@ -1226,7 +1226,7 @@ public class LocateCommand {
             ServerLevel world = source.getLevel();
             var results = EntityQuery.findByTypeInRange(world, typeOpt.get(), lazyOnly, centre, chunkRange);
             ResultFormatter.sendLocateResults(source, results,
-                    id + " (" + chunkRange + "-chunk range)",
+                    id + " (" + RangeFilter.rangeLabel(chunkRange) + ")",
                     ResultFormatter.dimensionName(world.dimension()), lazyOnly, detail);
             return 1;
         } catch (Exception e) {
@@ -1337,7 +1337,7 @@ public class LocateCommand {
             Vec3 centre = source.getPosition();
             ServerLevel world = source.getLevel();
             var counts = EntityQuery.countItemsByTypeInRange(world, centre, chunkRange);
-            ResultFormatter.sendItemSummary(source, counts, chunkRange + "-chunk range");
+            ResultFormatter.sendItemSummary(source, counts, RangeFilter.rangeLabel(chunkRange));
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in item summary range", e);
@@ -1361,7 +1361,7 @@ public class LocateCommand {
             ServerLevel world = source.getLevel();
             var results = EntityQuery.findItemsByTypeInRange(world, id, lazyOnly, centre, chunkRange);
             ResultFormatter.sendLocateResults(source, results,
-                    id + " (" + chunkRange + "-chunk range)",
+                    id + " (" + RangeFilter.rangeLabel(chunkRange) + ")",
                     ResultFormatter.dimensionName(world.dimension()), lazyOnly, detail);
             return 1;
         } catch (Exception e) {

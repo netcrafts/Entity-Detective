@@ -23,6 +23,7 @@ import netcrafts.detective.query.EntityQuery.BELocateResult;
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
 import netcrafts.detective.query.EntityQuery.EntityTypeCount;
 import netcrafts.detective.query.EntityQuery.QueryResult;
+import netcrafts.detective.query.RangeFilter;
 import netcrafts.detective.query.MobCapInfo.CategoryInfo;
 
 import java.util.ArrayList;
@@ -349,8 +350,7 @@ public class ResultFormatter {
         @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
         String label = id != null ? id.toString() : type.getDescriptionId();
 
-        String rangeNote = chunkRange > 0 ? " [" + chunkRange + "-chunk range]" : "";
-
+        String rangeNote = chunkRange > 0 ? " [" + RangeFilter.rangeLabel(chunkRange) + "]" : "";
         double divider = 1.0 / ticks / 1_000_000.0; // nanos per tick → ms per tick
         long totalNanos = perDim.values().stream().mapToLong(d -> d[0]).sum();
         long totalCount = perDim.values().stream().mapToLong(d -> d[1]).sum();
@@ -423,7 +423,7 @@ public class ResultFormatter {
         @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
         String label = id != null ? id.toString() : type.toString();
 
-        String rangeNote = chunkRange > 0 ? " [" + chunkRange + "-chunk range]" : "";
+        String rangeNote = chunkRange > 0 ? " [" + RangeFilter.rangeLabel(chunkRange) + "]" : "";
 
         double divider = 1.0 / ticks / 1_000_000.0;
         long totalNanos = perBEDim.values().stream().mapToLong(d -> d[0]).sum();
@@ -568,6 +568,12 @@ public class ResultFormatter {
 
         double divider = 1.0 / ticks / 1_000_000.0;
 
+        double totalMs = divider * totalNanos;
+        double totalAvg = (double) totalCount / ticks;
+        source.sendSuccess(() -> Component.literal(
+                String.format("  %7.3fmspt  TOTAL \u00d7%.0f", totalMs, totalAvg))
+                .withStyle(ChatFormatting.GOLD), false);
+
         rows.sort((a, b) -> Long.compare(b.nanos(), a.nanos()));
 
         for (ProfileRow row : rows) {
@@ -580,10 +586,10 @@ public class ResultFormatter {
                     .withStyle(ChatFormatting.WHITE), false);
         }
 
-        double totalMs = divider * totalNanos;
-        double totalAvg = (double) totalCount / ticks;
+        double totalMs2 = divider * totalNanos;
+        double totalAvg2 = (double) totalCount / ticks;
         source.sendSuccess(() -> Component.literal(
-                String.format("  %7.3fmspt  TOTAL \u00d7%.0f", totalMs, totalAvg))
+                String.format("  %7.3fmspt  TOTAL \u00d7%.0f", totalMs2, totalAvg2))
                 .withStyle(ChatFormatting.GOLD), false);
     }
 
