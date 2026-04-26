@@ -5,6 +5,7 @@
 	"mixins": [
 		"BlockEntityTickMixin",
 		"ChunkMapMixin",
+		"EntityRideTickMixin",
 		"EntityTickMixin"
 	],
 	"injectors": {

@@ -4,6 +4,4 @@
   One line per feature or fix. Keep entries short and user-facing.
 -->
 
-- **Bug fix**: `mob <category> --lazy-only` no longer counts persistent mobs (name-tagged, leashed, riding a vehicle) — they don't contribute to mob cap and are now correctly excluded from lazy results.
-- **Improvement**: `entity profile all` now shows the total MSPT line at the **top** of the output as well as the bottom — no more scrolling to find the total on a busy server.
-- **New**: `--range 0` is now valid and targets the single chunk the player is standing in.
+- **Bug fix**: `entity profile all` (and single-type `profile`) now correctly counts and times passenger entities (e.g. villagers in minecarts) — previously they were invisible to the profiler because Minecraft bypasses `guardEntityTick` for passengers.
