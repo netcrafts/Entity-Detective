@@ -5,8 +5,10 @@
 	"mixins": [
 		"BlockEntityTickMixin",
 		"ChunkMapMixin",
+		"DistanceManagerAccessor",
 		"EntityRideTickMixin",
-		"EntityTickMixin"
+		"EntityTickMixin",
+		"TicketStorageAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1

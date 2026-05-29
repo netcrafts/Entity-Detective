@@ -2,6 +2,7 @@ package netcrafts.detective.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.tree.LiteralCommandNode;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -30,6 +31,7 @@ import net.minecraft.world.phys.Vec3;
 
 import netcrafts.detective.EntityDetective;
 import netcrafts.detective.output.ResultFormatter;
+import netcrafts.detective.query.ChunkLoaderQuery;
 import netcrafts.detective.query.EntityProfiler;
 import netcrafts.detective.query.EntityQuery;
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
@@ -135,7 +137,7 @@ public class LocateCommand {
             };
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        dispatcher.register(
+        LiteralCommandNode<CommandSourceStack> mainNode = dispatcher.register(
             Commands.literal("entitydetective")
                 .requires(source -> {
                     // Guard: during command tree serialization the server reference can be null
@@ -304,21 +306,21 @@ public class LocateCommand {
                     .then(Commands.literal("locate")
                         .then(Commands.argument("entityType", IdentifierArgument.id())
                             .suggests(ENTITY_TYPE_SUGGESTIONS)
-                            .executes(ctx -> executeEntityLocate(ctx, false, null, false))
+                            .executes(ctx -> executeEntityLocate(ctx, false, null, false, false))
                             .then(Commands.literal("--detail")
-                                .executes(ctx -> executeEntityLocate(ctx, false, null, true))
+                                .executes(ctx -> executeEntityLocate(ctx, false, null, true, false))
                             )
                             .then(Commands.literal("--lazy-only")
-                                .executes(ctx -> executeEntityLocate(ctx, true, null, false))
+                                .executes(ctx -> executeEntityLocate(ctx, true, null, false, false))
                                 .then(Commands.literal("--detail")
-                                    .executes(ctx -> executeEntityLocate(ctx, true, null, true))
+                                    .executes(ctx -> executeEntityLocate(ctx, true, null, true, false))
                                 )
                                 .then(Commands.literal("--world")
                                     .then(Commands.argument("dim", StringArgumentType.word())
                                         .suggests(DIM_SUGGESTIONS)
-                                        .executes(ctx -> executeEntityLocate(ctx, true, StringArgumentType.getString(ctx, "dim"), false))
+                                        .executes(ctx -> executeEntityLocate(ctx, true, StringArgumentType.getString(ctx, "dim"), false, false))
                                         .then(Commands.literal("--detail")
-                                            .executes(ctx -> executeEntityLocate(ctx, true, StringArgumentType.getString(ctx, "dim"), true))
+                                            .executes(ctx -> executeEntityLocate(ctx, true, StringArgumentType.getString(ctx, "dim"), true, false))
                                         )
                                     )
                                 )
@@ -326,23 +328,35 @@ public class LocateCommand {
                             .then(Commands.literal("--world")
                                 .then(Commands.argument("dim", StringArgumentType.word())
                                     .suggests(DIM_SUGGESTIONS)
-                                    .executes(ctx -> executeEntityLocate(ctx, false, StringArgumentType.getString(ctx, "dim"), false))
+                                    .executes(ctx -> executeEntityLocate(ctx, false, StringArgumentType.getString(ctx, "dim"), false, false))
                                     .then(Commands.literal("--detail")
-                                        .executes(ctx -> executeEntityLocate(ctx, false, StringArgumentType.getString(ctx, "dim"), true))
+                                        .executes(ctx -> executeEntityLocate(ctx, false, StringArgumentType.getString(ctx, "dim"), true, false))
                                     )
+                                )
+                            )
+                            .then(Commands.literal("--ticking-only")
+                                .executes(ctx -> executeEntityLocate(ctx, false, null, false, true))
+                                .then(Commands.literal("--detail")
+                                    .executes(ctx -> executeEntityLocate(ctx, false, null, true, true))
                                 )
                             )
                             .then(Commands.literal("--range")
                                 .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
-                                    .executes(ctx -> executeEntityLocateRange(ctx, false, false))
+                                    .executes(ctx -> executeEntityLocateRange(ctx, false, false, false))
                                     .then(Commands.literal("--lazy-only")
-                                        .executes(ctx -> executeEntityLocateRange(ctx, true, false))
+                                        .executes(ctx -> executeEntityLocateRange(ctx, true, false, false))
                                         .then(Commands.literal("--detail")
-                                            .executes(ctx -> executeEntityLocateRange(ctx, true, true))
+                                            .executes(ctx -> executeEntityLocateRange(ctx, true, true, false))
+                                        )
+                                    )
+                                    .then(Commands.literal("--ticking-only")
+                                        .executes(ctx -> executeEntityLocateRange(ctx, false, false, true))
+                                        .then(Commands.literal("--detail")
+                                            .executes(ctx -> executeEntityLocateRange(ctx, false, true, true))
                                         )
                                     )
                                     .then(Commands.literal("--detail")
-                                        .executes(ctx -> executeEntityLocateRange(ctx, false, true))
+                                        .executes(ctx -> executeEntityLocateRange(ctx, false, true, false))
                                     )
                                 )
                             )
@@ -390,6 +404,18 @@ public class LocateCommand {
                                         .executes(ctx -> executeProfileRange(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
                                     )
                                 )
+                                .then(Commands.literal("--debug")
+                                    .executes(ctx -> executeProfileDebug(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
+                                )
+                            )
+                            .then(Commands.literal("--world")
+                                .then(Commands.argument("dim", StringArgumentType.word())
+                                    .suggests(DIM_SUGGESTIONS)
+                                    .executes(ctx -> executeProfileWorld(ctx, 100))
+                                    .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
+                                        .executes(ctx -> executeProfileWorld(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
+                                    )
+                                )
                             )
                             .then(Commands.literal("--range")
                                 .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
@@ -397,6 +423,12 @@ public class LocateCommand {
                                     .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                         .executes(ctx -> executeProfileRange(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
                                     )
+                                )
+                            )
+                            .then(Commands.literal("--debug")
+                                .executes(ctx -> executeProfileDebug(ctx, 100))
+                                .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
+                                    .executes(ctx -> executeProfileDebug(ctx, IntegerArgumentType.getInteger(ctx, "ticks")))
                                 )
                             )
                         )
@@ -491,7 +523,26 @@ public class LocateCommand {
                         )
                     )
                 )
+                // /entitydetective chunks — list all active portal loaders and stasis chambers
+                .then(Commands.literal("chunks")
+                    .executes(ctx -> executeChunkLoaders(ctx))
+                )
         );
+        dispatcher.register(Commands.literal("ed").redirect(mainNode));
+    }
+
+    private static int executeChunkLoaders(CommandContext<CommandSourceStack> ctx) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            var results = ChunkLoaderQuery.findAll(source.getServer());
+            ResultFormatter.sendChunkLoaderResults(source, results);
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in chunks command", e);
+            source.sendFailure(Component.literal(ERR_INTERNAL));
+            return 0;
+        }
     }
 
     private static int executeMobcap(CommandContext<CommandSourceStack> ctx, String dimArg) {
@@ -681,7 +732,8 @@ public class LocateCommand {
             CommandContext<CommandSourceStack> ctx,
             boolean lazyOnly,
             String dimArg,
-            boolean detail) {
+            boolean detail,
+            boolean tickingOnly) {
 
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
@@ -697,6 +749,11 @@ public class LocateCommand {
                     return 0;
                 }
                 BlockEntityType<?> beType = beTypeOpt.get();
+                if (tickingOnly) {
+                    // Silently run a profiling window and report positions observed ticking.
+                    EntityProfiler.INSTANCE.startBELocate(source, beType, 20, detail);
+                    return 1;
+                }
                 String label = id.toString();
                 List<ServerLevel> beWorlds;
                 if (dimArg == null) {
@@ -712,7 +769,7 @@ public class LocateCommand {
                 }
                 for (ServerLevel beWorld : beWorlds) {
                     String dimName = ResultFormatter.dimensionName(beWorld.dimension());
-                    var beResults = EntityQuery.findBlockEntitiesByType(beWorld, beType);
+                    var beResults = EntityQuery.findBlockEntitiesByType(beWorld, beType, false);
                     ResultFormatter.sendBELocateResults(source, beResults, label, dimName, detail);
                 }
                 return 1;
@@ -929,6 +986,24 @@ public class LocateCommand {
             return 0;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile command", e);
+            source.sendFailure(Component.literal(ERR_INTERNAL));
+            return 0;
+        }
+    }
+
+    private static int executeProfileDebug(CommandContext<CommandSourceStack> ctx, int ticks) {
+        CommandSourceStack source = ctx.getSource();
+        try {
+            Identifier id = IdentifierArgument.getId(ctx, "entityType");
+            Optional<BlockEntityType<?>> beTypeOpt = BuiltInRegistries.BLOCK_ENTITY_TYPE.getOptional(id);
+            if (beTypeOpt.isPresent()) {
+                EntityProfiler.INSTANCE.startBEDebug(source, beTypeOpt.get(), ticks);
+                return 1;
+            }
+            source.sendFailure(Component.literal("--debug is only supported for block entity types (e.g. minecraft:hopper)."));
+            return 0;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile debug command", e);
             source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
@@ -1196,7 +1271,8 @@ public class LocateCommand {
     }
 
     private static int executeEntityLocateRange(
-            CommandContext<CommandSourceStack> ctx, boolean lazyOnly, boolean detail) {
+            CommandContext<CommandSourceStack> ctx, boolean lazyOnly, boolean detail,
+            boolean tickingOnly) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
         if (RangeFilter.sourceIsNotPlayer(source)) return 0;
@@ -1214,7 +1290,12 @@ public class LocateCommand {
                 int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
                 Vec3 centre = source.getPosition();
                 ServerLevel beWorld = source.getLevel();
-                var beResults = EntityQuery.findBlockEntitiesByTypeInRange(beWorld, beTypeOpt.get(), centre, chunkRange);
+                if (tickingOnly) {
+                    EntityProfiler.INSTANCE.startBELocateWithRange(source, beTypeOpt.get(), 20,
+                            centre, beWorld.dimension(), chunkRange, detail);
+                    return 1;
+                }
+                var beResults = EntityQuery.findBlockEntitiesByTypeInRange(beWorld, beTypeOpt.get(), centre, chunkRange, false);
                 ResultFormatter.sendBELocateResults(source, beResults,
                         id + " (" + RangeFilter.rangeLabel(chunkRange) + ")",
                         ResultFormatter.dimensionName(beWorld.dimension()), detail);
@@ -1293,6 +1374,35 @@ public class LocateCommand {
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile all", e);
+            source.sendFailure(Component.literal(ERR_INTERNAL));
+            return 0;
+        }
+    }
+
+    private static int executeProfileWorld(CommandContext<CommandSourceStack> ctx, int ticks) {
+        CommandSourceStack source = ctx.getSource();
+        try {
+            Identifier id = IdentifierArgument.getId(ctx, "entityType");
+            String dimArg = StringArgumentType.getString(ctx, "dim");
+            ServerLevel world = resolveWorld(source, dimArg);
+            if (world == null) {
+                source.sendFailure(Component.literal(ERR_DIM + dimArg));
+                return 0;
+            }
+            Optional<EntityType<?>> typeOpt = BuiltInRegistries.ENTITY_TYPE.getOptional(id);
+            if (typeOpt.isPresent()) {
+                EntityProfiler.INSTANCE.startWithDimension(source, typeOpt.get(), ticks, world.dimension());
+                return 1;
+            }
+            Optional<BlockEntityType<?>> beTypeOpt = BuiltInRegistries.BLOCK_ENTITY_TYPE.getOptional(id);
+            if (beTypeOpt.isPresent()) {
+                EntityProfiler.INSTANCE.startBEWithDimension(source, beTypeOpt.get(), ticks, world.dimension());
+                return 1;
+            }
+            source.sendFailure(Component.literal(ERR_ENTITY + id));
+            return 0;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in profile world", e);
             source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }

@@ -19,6 +19,10 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 
 import org.jetbrains.annotations.Nullable;
 
+import netcrafts.detective.query.ChunkLoaderQuery;
+import netcrafts.detective.query.ChunkLoaderQuery.ChunkLoaderResult;
+import netcrafts.detective.query.ChunkLoaderQuery.LoaderEntry;
+import netcrafts.detective.query.ChunkLoaderQuery.LoaderType;
 import netcrafts.detective.query.EntityQuery.BELocateResult;
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
 import netcrafts.detective.query.EntityQuery.EntityTypeCount;
@@ -255,8 +259,62 @@ public class ResultFormatter {
     }
 
     // -------------------------------------------------------------------------
+    // BE debug display (per-position tick counts)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Report per-position tick counts from a debug profiling session.
+     * Entries should be pre-sorted descending by tick count.
+     */
+    public static void sendBEDebugResults(
+            CommandSourceStack source,
+            java.util.LinkedHashMap<BlockPos, Integer> counts,
+            String label,
+            int ticks) {
+
+        if (counts.isEmpty()) {
+            source.sendSuccess(() -> Component.literal(
+                    "No " + label + " ticked during the " + ticks + "-tick window.")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        int total = counts.size();
+        source.sendSuccess(() -> Component.literal(
+                String.format("-- %s debug [%d ticks]: %d positions observed --", label, ticks, total))
+                .withStyle(ChatFormatting.GOLD), false);
+
+        int shown = Math.min(total, MAX_CHUNKS_SHOWN);
+        int i = 0;
+        for (Map.Entry<BlockPos, Integer> entry : counts.entrySet()) {
+            if (i++ >= shown) break;
+            BlockPos pos = entry.getKey();
+            int tickCount = entry.getValue();
+            int pct = ticks > 0 ? (tickCount * 100 / ticks) : 0;
+            // Color: green <50%, yellow 50-85%, red >85%
+            int color = pct > 85 ? COLOR_HIGH : pct >= 50 ? COLOR_MEDIUM : COLOR_LOW;
+            String tpCommand = String.format("/tp @s %d %d %d", pos.getX(), pos.getY(), pos.getZ());
+            ClickEvent click = new ClickEvent.SuggestCommand(tpCommand);
+            MutableComponent coordPart = Component.literal(
+                    String.format("  [%d, %d, %d]", pos.getX(), pos.getY(), pos.getZ()))
+                    .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
+            MutableComponent tickPart = Component.literal(
+                    String.format(" — %d/%d ticks (%d%%)", tickCount, ticks, pct))
+                    .withStyle(Style.EMPTY.withColor(color));
+            source.sendSuccess(() -> coordPart.append(tickPart), false);
+        }
+
+        if (total > shown) {
+            int remaining = total - shown;
+            source.sendSuccess(() -> Component.literal("  ...and " + remaining + " more positions.")
+                    .withStyle(ChatFormatting.GRAY), false);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Entity type summary display
     // -------------------------------------------------------------------------
+
 
     public static void sendEntitySummary(
             CommandSourceStack source,
@@ -348,7 +406,7 @@ public class ResultFormatter {
             Map<ResourceKey<Level>, long[]> perDim) {
 
         @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
-        String label = id != null ? id.toString() : type.getDescriptionId();
+        String label = id != null ? (modPrefix(id) + id.getPath()) : type.getDescriptionId();
 
         String rangeNote = chunkRange > 0 ? " [" + RangeFilter.rangeLabel(chunkRange) + "]" : "";
         double divider = 1.0 / ticks / 1_000_000.0; // nanos per tick → ms per tick
@@ -421,7 +479,7 @@ public class ResultFormatter {
             Map<ResourceKey<Level>, long[]> perBEDim) {
 
         @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
-        String label = id != null ? id.toString() : type.toString();
+        String label = id != null ? (modPrefix(id) + id.getPath()) : type.toString();
 
         String rangeNote = chunkRange > 0 ? " [" + RangeFilter.rangeLabel(chunkRange) + "]" : "";
 
@@ -534,26 +592,24 @@ public class ResultFormatter {
                 String.format("-- Base Profile: %s (%d ticks) --", scopeLabel, ticks))
                 .withStyle(ChatFormatting.GOLD), false);
 
-        // Build a unified list of (displayName, nanos, ticks) records
-        record ProfileRow(String name, long nanos, long count) {}
+        // Build a unified list of (modPrefix, displayName, nanos, ticks) records
+        record ProfileRow(String prefix, String name, long nanos, long count) {}
         List<ProfileRow> rows = new ArrayList<>();
 
         for (var entry : perType.entrySet()) {
             @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(entry.getKey());
-            String name = id != null
-                    ? ("minecraft".equals(id.getNamespace()) ? id.getPath() : id.toString())
-                    : entry.getKey().getDescriptionId();
-            rows.add(new ProfileRow(name, entry.getValue()[0], entry.getValue()[1]));
+            String prefix = id != null ? modPrefix(id) : "";
+            String name   = id != null ? id.getPath() : entry.getKey().getDescriptionId();
+            rows.add(new ProfileRow(prefix, name, entry.getValue()[0], entry.getValue()[1]));
         }
 
         for (var entry : perBEType.entrySet()) {
             @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(entry.getKey());
-            String rawName = id != null
-                    ? ("minecraft".equals(id.getNamespace()) ? id.getPath() : id.toString())
-                    : entry.getKey().toString();
+            String prefix  = id != null ? modPrefix(id) : "";
+            String rawName = id != null ? id.getPath() : entry.getKey().toString();
             // Prefix block entities to distinguish them from mobs with the same short name
             String name = "[be] " + rawName;
-            rows.add(new ProfileRow(name, entry.getValue()[0], entry.getValue()[1]));
+            rows.add(new ProfileRow(prefix, name, entry.getValue()[0], entry.getValue()[1]));
         }
 
         long totalNanos = rows.stream().mapToLong(ProfileRow::nanos).sum();
@@ -580,10 +636,16 @@ public class ResultFormatter {
             double ms = divider * row.nanos();
             double avgCount = (double) row.count() / ticks;
             double msPerTick = avgCount > 0 ? ms / avgCount : 0.0;
-            source.sendSuccess(() -> Component.literal(
-                    String.format("  %7.3fmspt  avg: %6.3fms  %s \u00d7%.0f",
-                            ms, msPerTick, row.name(), avgCount))
-                    .withStyle(ChatFormatting.WHITE), false);
+            MutableComponent line = Component.literal(
+                    String.format("  %7.3fmspt  avg: %6.3fms  ", ms, msPerTick))
+                    .withStyle(ChatFormatting.WHITE);
+            if (!row.prefix().isEmpty()) {
+                line.append(Component.literal(row.prefix()).withStyle(ChatFormatting.GOLD));
+            }
+            line.append(Component.literal(
+                    String.format("%s \u00d7%.0f", row.name(), avgCount))
+                    .withStyle(ChatFormatting.WHITE));
+            source.sendSuccess(() -> line, false);
         }
 
         double totalMs2 = divider * totalNanos;
@@ -802,6 +864,78 @@ public class ResultFormatter {
             line.append(Component.literal(name).withStyle(ChatFormatting.WHITE));
         }
         return line;
+    }
+
+    // -------------------------------------------------------------------------
+    // Chunk loaders display
+    // -------------------------------------------------------------------------
+
+    public static void sendChunkLoaderResults(CommandSourceStack source, List<ChunkLoaderResult> results) {
+        long portalCount = results.stream().filter(r -> r.primary().type() == LoaderType.PORTAL).count();
+        long pearlCount  = results.stream().filter(r -> r.primary().type() == LoaderType.ENDER_PEARL).count();
+
+        StringBuilder header = new StringBuilder("-- chunk loaders: ");
+        if (portalCount == 0 && pearlCount == 0) {
+            header.append("none found");
+        } else {
+            if (portalCount > 0) {
+                header.append(portalCount).append(" portal loader").append(portalCount > 1 ? "s" : "");
+            }
+            if (portalCount > 0 && pearlCount > 0) header.append(", ");
+            if (pearlCount > 0) {
+                header.append(pearlCount).append(" stasis chamber").append(pearlCount > 1 ? "s" : "");
+            }
+        }
+        header.append(" --");
+        final String headerStr = header.toString();
+        source.sendSuccess(() -> Component.literal(headerStr).withStyle(ChatFormatting.GOLD), false);
+
+        String playerDim = source.getLevel().dimension().identifier().getPath();
+        for (ChunkLoaderResult result : results) {
+            source.sendSuccess(() -> formatChunkLoaderLine(result, playerDim), false);
+        }
+    }
+
+    private static MutableComponent formatChunkLoaderLine(ChunkLoaderResult result, String playerDim) {
+        LoaderEntry primary = result.primary();
+        String typeLabel = primary.type() == LoaderType.PORTAL ? "Portal" : "Pearl ";
+        MutableComponent line = Component.literal("  " + typeLabel + "  ").withStyle(ChatFormatting.WHITE);
+        line.append(formatChunkLink(primary, playerDim));
+        LoaderEntry paired = result.paired();
+        if (paired != null) {
+            line.append(Component.literal("   |  ").withStyle(ChatFormatting.GRAY));
+            line.append(formatChunkLink(paired, playerDim));
+        } else if (primary.type() == LoaderType.PORTAL) {
+            line.append(Component.literal("  (unconfirmed)").withStyle(ChatFormatting.GRAY));
+        }
+        return line;
+    }
+
+    private static MutableComponent formatChunkLink(LoaderEntry entry, String playerDim) {
+        String dimLabel = switch (entry.dimPath()) {
+            case "overworld"  -> "OW";
+            case "the_nether" -> "Nether";
+            case "the_end"    -> "End";
+            default           -> entry.dimPath();
+        };
+        String coords = String.format("%s (%d, %d)", dimLabel, entry.pos().x(), entry.pos().z());
+        if (entry.dimPath().equals(playerDim)) {
+            String tpCmd = String.format("/tp @s %d ~ %d",
+                    entry.pos().getMiddleBlockX(), entry.pos().getMiddleBlockZ());
+            Style style = Style.EMPTY
+                    .withColor(ChatFormatting.GREEN)
+                    .withClickEvent(new ClickEvent.SuggestCommand(tpCmd));
+            return Component.literal(coords).withStyle(style);
+        }
+        return Component.literal(coords).withStyle(Style.EMPTY.withColor(ChatFormatting.RED));
+    }
+
+    /**
+     * Returns "[namespace] " for non-vanilla registry IDs, or "" for minecraft IDs.
+     * Used to attribute modded types in profile output.
+     */
+    private static String modPrefix(Identifier id) {
+        return "minecraft".equals(id.getNamespace()) ? "" : "[" + id.getNamespace() + "] ";
     }
 
     public static String dimensionName(net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> key) {

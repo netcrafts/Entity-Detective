@@ -612,7 +612,7 @@ public class EntityQuery {
      * grouped by chunk, sorted descending by count per chunk.
      */
     public static List<BELocateResult> findBlockEntitiesByType(
-            ServerLevel world, BlockEntityType<?> targetType) {
+            ServerLevel world, BlockEntityType<?> targetType, boolean tickingOnly) {
 
         Map<ChunkPos, List<BlockPos>> byChunk = new HashMap<>();
         ((ChunkMapAccessor) world.getChunkSource().chunkMap)
@@ -621,6 +621,7 @@ public class EntityQuery {
                     LevelChunk chunk = holder.getTickingChunk();
                     if (chunk == null) return;
                     ChunkPos chunkPos = chunk.getPos();
+                    if (tickingOnly && !world.shouldTickBlocksAt(chunkPos.pack())) return;
                     chunk.getBlockEntitiesPos().forEach(pos -> {
                         BlockEntity be = chunk.getBlockEntity(pos);
                         if (be == null || be.getType() != targetType) return;
@@ -638,7 +639,8 @@ public class EntityQuery {
      * Used by entity locate &lt;be_type&gt; --range.
      */
     public static List<BELocateResult> findBlockEntitiesByTypeInRange(
-            ServerLevel world, BlockEntityType<?> targetType, Vec3 centre, int chunkRange) {
+            ServerLevel world, BlockEntityType<?> targetType, Vec3 centre, int chunkRange,
+            boolean tickingOnly) {
 
         int pcx = toChunkCoord(centre.x);
         int pcz = toChunkCoord(centre.z);
@@ -651,6 +653,7 @@ public class EntityQuery {
                     ChunkPos chunkPos = chunk.getPos();
                     if (Math.abs(chunkPos.x() - pcx) > chunkRange
                             || Math.abs(chunkPos.z() - pcz) > chunkRange) return;
+                    if (tickingOnly && !world.shouldTickBlocksAt(chunkPos.pack())) return;
                     chunk.getBlockEntitiesPos().forEach(pos -> {
                         BlockEntity be = chunk.getBlockEntity(pos);
                         if (be == null || be.getType() != targetType) return;

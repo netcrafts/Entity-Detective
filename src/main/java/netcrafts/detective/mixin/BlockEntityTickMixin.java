@@ -45,6 +45,6 @@ public class BlockEntityTickMixin<T extends BlockEntity> {
         detectiveBETickStart = 0L;
         Level world = blockEntity.getLevel();
         if (world == null) return;
-        EntityProfiler.INSTANCE.recordByBlockEntityType(blockEntity.getType(), elapsed, world);
+        EntityProfiler.INSTANCE.recordByBlockEntityType(blockEntity.getType(), elapsed, world, blockEntity.getBlockPos());
     }
 }

@@ -17,10 +17,12 @@ import net.minecraft.world.phys.Vec3;
 
 import netcrafts.detective.EntityDetective;
 import netcrafts.detective.output.ResultFormatter;
+import netcrafts.detective.query.RangeFilter;
 
 import org.jetbrains.annotations.Nullable;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -90,6 +92,32 @@ public class EntityProfiler {
     /** Per-dimension: [0] = total nanos, [1] = total BE-ticks. Used in single-BE-type mode only. */
     private final Map<ResourceKey<Level>, long[]> perBEDim = new LinkedHashMap<>();
 
+    // -------------------------------------------------------------------------
+    // Locate-mode fields (--ticking-only)
+    // -------------------------------------------------------------------------
+
+    /**
+     * When true, the session observes which block entity positions actually tick
+     * rather than recording timing data. Used by {@code entity locate <be_type> --ticking-only}.
+     * Results are emitted as a {@link EntityQuery.BELocateResult} list via
+     * {@link ResultFormatter#sendBELocateResults} when the window closes.
+     */
+    private boolean locateMode = false;
+    private boolean locateDetail = false;
+
+    // -------------------------------------------------------------------------
+    // Debug-mode fields (entity profile <be_type> --debug)
+    // -------------------------------------------------------------------------
+
+    /** When true, records tick counts per BlockPos instead of aggregate timing. */
+    private boolean debugMode = false;
+    /**
+     * Per-position tick count. Used in both debug mode and locate mode:
+     * - debug: reports all observed positions with their counts
+     * - locate: filtered to positions that ticked every tick in the window (count >= ticksRequested)
+     */
+    private final Map<BlockPos, int[]> debugTickCounts = new LinkedHashMap<>();
+
     private EntityProfiler() {}
 
     // -------------------------------------------------------------------------
@@ -110,7 +138,8 @@ public class EntityProfiler {
         } else {
             // Single-type mode: type must match; if range is set, chunk position must also match.
             if (entity.getType() != targetType) return false;
-            if (targetDim == null) return true; // no range restriction
+            if (targetDim == null) return true; // no restriction
+            if (chunkRange < 0) return world.dimension().equals(targetDim); // whole-dimension mode
             return isInRange(entity, world);
         }
     }
@@ -147,7 +176,8 @@ public class EntityProfiler {
         } else if (targetBEType != null) {
             // Single-BE-type mode
             if (be.getType() != targetBEType) return false;
-            if (targetDim == null) return true; // no range restriction
+            if (targetDim == null) return true; // no restriction
+            if (chunkRange < 0) return world.dimension().equals(targetDim); // whole-dimension mode
             return isInBERange(be, world);
         }
         return false;
@@ -250,6 +280,31 @@ public class EntityProfiler {
     }
 
     /**
+     * Start a debug session: records how many times each individual block entity position
+     * ticked during the window. Used by {@code entity profile <be_type> --debug}.
+     */
+    public boolean startBEDebug(CommandSourceStack source, BlockEntityType<?> type, int ticks) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        targetBEType = type;
+        debugMode = true;
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+
+        @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
+        String label = id != null ? id.toString() : type.toString();
+        source.sendSuccess(() -> Component.literal(
+                "Debug profiling [be] " + label + " for " + ticks + " ticks (reporting per-position tick counts)..."), false);
+        return true;
+    }
+
+    /**
      * Start a single-BE-type profiling session restricted to a chunk-square range.
      * Returns false if a session is already running.
      */
@@ -280,6 +335,133 @@ public class EntityProfiler {
         String label = id != null ? id.toString() : type.toString();
         source.sendSuccess(() -> Component.literal(
                 "Profiling [be] " + label + (chunkRange == 0 ? " in the player's chunk for " : " within " + chunkRange + "-chunk range for ") + ticks + " ticks..."), false);
+        return true;
+    }
+
+    /**
+     * Start a locate-mode session: observe which instances of a block entity type actually
+     * tick during a short window, then report their positions.
+     * No range restriction — all loaded dimensions.
+     */
+    public boolean startBELocate(CommandSourceStack source, BlockEntityType<?> type, int ticks, boolean detail) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        targetBEType = type;
+        locateMode = true;
+        locateDetail = detail;
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+
+        @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
+        String label = id != null ? id.toString() : type.toString();
+        source.sendSuccess(() -> Component.literal(
+                "Observing ticking [be] " + label + " for " + ticks + " ticks..."), false);
+        return true;
+    }
+
+    /**
+     * Start a locate-mode session restricted to a chunk-square range.
+     */
+    public boolean startBELocateWithRange(
+            CommandSourceStack source,
+            BlockEntityType<?> type,
+            int ticks,
+            Vec3 centre,
+            ResourceKey<Level> dim,
+            int chunkRange,
+            boolean detail) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        targetBEType = type;
+        locateMode = true;
+        locateDetail = detail;
+        playerChunkX = (int) Math.floor(centre.x) >> 4;
+        playerChunkZ = (int) Math.floor(centre.z) >> 4;
+        this.chunkRange = chunkRange;
+        targetDim = dim;
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+
+        @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
+        String label = id != null ? id.toString() : type.toString();
+        source.sendSuccess(() -> Component.literal(
+                "Observing ticking [be] " + label
+                + (chunkRange == 0 ? " in the player's chunk for " : " within " + chunkRange + "-chunk range for ")
+                + ticks + " ticks..."), false);
+        return true;
+    }
+
+    /**
+     * Start a single-type profiling session restricted to one dimension (no chunk range).
+     * Returns false if a session is already running.
+     */
+    public boolean startWithDimension(
+            CommandSourceStack source,
+            EntityType<?> type,
+            int ticks,
+            ResourceKey<Level> dim) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        targetType = type;
+        targetDim = dim;
+        chunkRange = -1; // sentinel: whole dimension, no chunk range
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+
+        @Nullable Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+        String label = id != null ? id.toString() : type.getDescriptionId();
+        String dimName = ResultFormatter.dimensionName(dim);
+        source.sendSuccess(() -> Component.literal(
+                "Profiling " + label + " in " + dimName + " for " + ticks + " ticks..."), false);
+        return true;
+    }
+
+    /**
+     * Start a single-BE-type profiling session restricted to one dimension (no chunk range).
+     * Returns false if a session is already running.
+     */
+    public boolean startBEWithDimension(
+            CommandSourceStack source,
+            BlockEntityType<?> type,
+            int ticks,
+            ResourceKey<Level> dim) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        targetBEType = type;
+        targetDim = dim;
+        chunkRange = -1; // sentinel: whole dimension, no chunk range
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+
+        @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
+        String label = id != null ? id.toString() : type.toString();
+        String dimName = ResultFormatter.dimensionName(dim);
+        source.sendSuccess(() -> Component.literal(
+                "Profiling [be] " + label + " in " + dimName + " for " + ticks + " ticks..."), false);
         return true;
     }
 
@@ -394,11 +576,16 @@ public class EntityProfiler {
     /**
      * Record a block entity tick measurement.
      * Routes to {@link #perBEType} in allTypesMode, or {@link #perBEDim} in single-BE-type mode.
+     * In locate mode, records the block entity's position instead of timing data.
      * Called from BlockEntityTickMixin.
      */
-    public void recordByBlockEntityType(BlockEntityType<?> type, long nanos, Level world) {
+    public void recordByBlockEntityType(BlockEntityType<?> type, long nanos, Level world, BlockPos pos) {
         if (!active) return;
-        if (allTypesMode) {
+        if (debugMode && targetBEType != null) {
+            debugTickCounts.computeIfAbsent(pos, k -> new int[1])[0]++;
+        } else if (locateMode && targetBEType != null) {
+            debugTickCounts.computeIfAbsent(pos, k -> new int[1])[0]++;
+        } else if (allTypesMode) {
             long[] data = perBEType.computeIfAbsent(type, k -> new long[2]);
             data[0] += nanos;
             data[1]++;
@@ -428,6 +615,9 @@ public class EntityProfiler {
 
     private void resetState() {
         allTypesMode = false;
+        locateMode = false;
+        locateDetail = false;
+        debugMode = false;
         targetType = null;
         targetBEType = null;
         playerChunkX = 0;
@@ -438,6 +628,7 @@ public class EntityProfiler {
         perType.clear();
         perBEType.clear();
         perBEDim.clear();
+        debugTickCounts.clear();
     }
 
     private void completeSession() {
@@ -446,7 +637,37 @@ public class EntityProfiler {
         requester = null;
         if (src == null) return;
         try {
-            if (allTypesMode) {
+            if (debugMode && targetBEType != null) {
+                @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(targetBEType);
+                String label = id != null ? id.toString() : targetBEType.toString();
+                // Snapshot: Map<BlockPos, tickCount> sorted descending
+                java.util.LinkedHashMap<BlockPos, Integer> sorted = new java.util.LinkedHashMap<>();
+                debugTickCounts.entrySet().stream()
+                        .sorted((a, b) -> Integer.compare(b.getValue()[0], a.getValue()[0]))
+                        .forEach(e -> sorted.put(e.getKey(), e.getValue()[0]));
+                ResultFormatter.sendBEDebugResults(src, sorted, label, ticksRequested);
+            } else if (locateMode && targetBEType != null) {
+                @Nullable Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(targetBEType);
+                String label = id != null ? id.toString() : targetBEType.toString();
+                String scopeLabel = chunkRange >= 0
+                        ? label + " (" + RangeFilter.rangeLabel(chunkRange) + ")"
+                        : label;
+                // Only include positions that ticked every single tick in the window.
+                java.util.LinkedHashMap<ChunkPos, java.util.List<BlockPos>> byChunk = new java.util.LinkedHashMap<>();
+                debugTickCounts.entrySet().stream()
+                        .filter(e -> e.getValue()[0] >= ticksRequested)
+                        .forEach(e -> byChunk
+                                .computeIfAbsent(ChunkPos.containing(e.getKey()), k -> new java.util.ArrayList<>())
+                                .add(e.getKey()));
+                List<EntityQuery.BELocateResult> results = byChunk.entrySet().stream()
+                        .map(e -> new EntityQuery.BELocateResult(e.getKey(), e.getValue()))
+                        .sorted(java.util.Comparator.comparingInt(r -> -r.positions().size()))
+                        .toList();
+                String dimName = targetDim != null
+                        ? ResultFormatter.dimensionName(targetDim)
+                        : "all dimensions";
+                ResultFormatter.sendBELocateResults(src, results, scopeLabel + " (ticking only)", dimName, locateDetail);
+            } else if (allTypesMode) {
                 String scopeLabel;
                 if (targetDim == null) {
                     scopeLabel = "all loaded entities, all dimensions";
