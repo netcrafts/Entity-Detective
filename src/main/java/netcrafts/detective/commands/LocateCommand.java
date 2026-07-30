@@ -523,12 +523,30 @@ public class LocateCommand {
                         )
                     )
                 )
+                // /entitydetective hotspot — top-5 entity hotspot scan (20-tick sample, all dimensions)
+                .then(Commands.literal("hotspot")
+                    .executes(ctx -> executeHotspot(ctx))
+                )
+
                 // /entitydetective chunks — list all active portal loaders and stasis chambers
                 .then(Commands.literal("chunks")
                     .executes(ctx -> executeChunkLoaders(ctx))
                 )
         );
         dispatcher.register(Commands.literal("ed").redirect(mainNode));
+    }
+
+    private static int executeHotspot(CommandContext<CommandSourceStack> ctx) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            if (!EntityProfiler.INSTANCE.startHotspot(source)) return 0;
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in hotspot command", e);
+            source.sendFailure(Component.literal(ERR_INTERNAL));
+            return 0;
+        }
     }
 
     private static int executeChunkLoaders(CommandContext<CommandSourceStack> ctx) {

@@ -50,7 +50,9 @@ public abstract class EntityTickMixin {
         long elapsed = System.nanoTime() - detectiveEntityTickStart;
         detectiveEntityTickStart = 0L;
         EntityProfiler profiler = EntityProfiler.INSTANCE;
-        if (profiler.isAllTypesMode()) {
+        if (profiler.isHotspotMode()) {
+            profiler.recordHotspot(entity, (Level) (Object) this, elapsed);
+        } else if (profiler.isAllTypesMode()) {
             profiler.recordByType(entity.getType(), elapsed);
         } else {
             profiler.recordTick((Level) (Object) this, elapsed);

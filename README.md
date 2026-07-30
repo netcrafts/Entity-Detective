@@ -40,6 +40,11 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
             Flags: --lazy-only, --world, --detail
             Range: --range <chunks> [--lazy-only] [--detail]
 
+├── hotspot                    — 20-tick scan across all loaded dimensions; reports up to 5 entity-cost
+│                                chunks sorted by MSPT, with dominant entity type and average count
+│                                Colour-coded green (<5 ms) / yellow (5–15 ms) / red (≥15 ms)
+│                                Chunks below 2 ms are filtered out. Chunk coords are clickable /tp links.
+│
 └── chunks                     — Detect active chunk loaders across all dimensions
         Portal loaders shown as paired OW ↔ Nether lines; stasis chambers listed separately
         Coordinates are clickable /tp suggestions when you are in the matching dimension
@@ -49,7 +54,7 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 
 ## Installation
 
-1. Install [Fabric Loader](https://fabricmc.net/use/) and [Fabric API](https://modrinth.com/mod/fabric-api) for Minecraft 26.1.x  
+1. Install [Fabric Loader](https://fabricmc.net/use/) and [Fabric API](https://modrinth.com/mod/fabric-api) for Minecraft 26.2  
 2. Drop `entity-detective-<version>.jar` into your `mods/` folder  
 3. No client mod required — server-side only
 
@@ -133,7 +138,31 @@ Coordinates are **green and clickable** when you are in the matching dimension, 
 
 ---
 
-## What's new in Entity Detective 2.5.4
+## What's new in Entity Detective 2.6.1
+
+### `/entitydetective hotspot` — Entity cost hotspot scanner
+
+New command that identifies the most expensive entity chunks across all loaded dimensions in one shot:
+
+- Runs a **20-tick sample** covering all entities in all loaded dimensions simultaneously
+- Reports up to **5 chunks** sorted by MSPT cost, each showing the dominant entity type and average count
+- **Colour-coded** output: green <5 ms, yellow 5–15 ms, red ≥15 ms per tick
+- Chunks below 2 ms are filtered out to reduce noise
+- Chunk coordinates are **clickable `/tp` suggestions**
+
+```
+/entitydetective hotspot
+```
+```
+-- Entity Hotspots (20 tick sample) --
+  [  12,  -4]  overworld      312 x  minecraft:item           8.3 ms
+  [ -80, 128]  overworld       18 x  minecraft:armor_stand    4.1 ms
+  [  74,  -1]  nether           6 x  minecraft:piglin          2.7 ms
+```
+
+---
+
+## What's new in Entity Detective 2.6.0 / 2.5.4
 
 ### `/entitydetective chunks` — Chunk loader detection
 
@@ -198,9 +227,9 @@ A mob **won't naturally despawn** if it has been name-tagged, has picked up a gr
 
 | Dependency | Version |
 |------------|---------|
-| Minecraft | 26.1.x |
-| Fabric Loader | ≥ 0.19.1 |
-| Fabric API | ≥ 0.145.4+26.1.2 |
+| Minecraft | 26.2 |
+| Fabric Loader | ≥ 0.19.3 |
+| Fabric API | ≥ 0.152.1+26.2 |
 | LuckPerms | optional |
 
 ---

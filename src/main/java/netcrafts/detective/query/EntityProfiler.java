@@ -9,6 +9,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -106,6 +107,37 @@ public class EntityProfiler {
     private boolean locateDetail = false;
 
     // -------------------------------------------------------------------------
+    // Hotspot mode fields
+    // -------------------------------------------------------------------------
+
+    /**
+     * When true, the session records timing bucketed by (dim, chunk, type) across all
+     * loaded dimensions. For {@code ItemEntity} instances the type key is the item's
+     * registry ID; for all other entities it is the entity type registry ID.
+     * Used by {@code /ed hotspot}.
+     */
+    private boolean hotspotMode = false;
+
+    /** dim → chunk → typeId → [totalNanos, entityTickCount] */
+    private final Map<ResourceKey<Level>, Map<ChunkPos, Map<Identifier, long[]>>> hotspotData = new LinkedHashMap<>();
+
+    /**
+     * A single hotspot result row: the dominant (highest-MSPT) entity type in one chunk.
+     *
+     * @param chunk   the chunk position
+     * @param dim     the dimension the chunk is in
+     * @param typeId  item registry key for item-entity piles; entity type key otherwise
+     * @param mspt    average milliseconds spent ticking this type in this chunk per tick
+     * @param count   average number of entities of this type in this chunk per tick
+     */
+    public record HotspotResult(
+            ChunkPos chunk,
+            ResourceKey<Level> dim,
+            Identifier typeId,
+            double mspt,
+            long count) {}
+
+    // -------------------------------------------------------------------------
     // Debug-mode fields (entity profile <be_type> --debug)
     // -------------------------------------------------------------------------
 
@@ -130,6 +162,7 @@ public class EntityProfiler {
      */
     public boolean shouldTime(Entity entity, Level world) {
         if (!active) return false;
+        if (hotspotMode) return true; // all entities, all dimensions
         if (allTypesMode) {
             if (targetDim == null) return true; // global all-types: no restriction
             if (!world.dimension().equals(targetDim)) return false;
@@ -155,6 +188,11 @@ public class EntityProfiler {
     /** Returns true if the active session is in all-types mode. */
     public boolean isAllTypesMode() {
         return active && allTypesMode;
+    }
+
+    /** Returns true if the active session is in hotspot mode. */
+    public boolean isHotspotMode() {
+        return active && hotspotMode;
     }
 
     /**
@@ -196,6 +234,28 @@ public class EntityProfiler {
     // -------------------------------------------------------------------------
     // Session start methods
     // -------------------------------------------------------------------------
+
+    /**
+     * Start a hotspot scan: times all entities in all loaded dimensions for 20 ticks,
+     * then reports the top-5 (chunk, entity-type) pairs by MSPT.
+     * Returns false if a session is already running.
+     */
+    public boolean startHotspot(CommandSourceStack source) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        hotspotMode = true;
+        ticksRequested = 20;
+        ticksRemaining = 20;
+        requester = source;
+        active = true;
+        source.sendSuccess(() -> Component.literal(
+                "Scanning for entity hotspots (20 ticks)..."), false);
+        return true;
+    }
 
     /**
      * Start a standard single-type profiling session (no range restriction).
@@ -552,6 +612,29 @@ public class EntityProfiler {
     // -------------------------------------------------------------------------
 
     /**
+     * Record a hotspot entity tick measurement, bucketed by (dim, chunk, typeId).
+     * For {@link ItemEntity} the key is the item registry ID; otherwise the entity type ID.
+     * Called from EntityTickMixin when hotspotMode is true — hot path.
+     */
+    public void recordHotspot(Entity entity, Level world, long nanos) {
+        if (!active) return;
+        @Nullable Identifier typeId;
+        if (entity instanceof ItemEntity ie) {
+            typeId = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
+        } else {
+            typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        }
+        if (typeId == null) return;
+        ChunkPos chunk = ChunkPos.containing(entity.blockPosition());
+        long[] data = hotspotData
+                .computeIfAbsent(world.dimension(), d -> new LinkedHashMap<>())
+                .computeIfAbsent(chunk, c -> new LinkedHashMap<>())
+                .computeIfAbsent(typeId, t -> new long[]{0L, 0L});
+        data[0] += nanos;
+        data[1]++;
+    }
+
+    /**
      * Record a single-type entity tick measurement, bucketed by dimension.
      * Called from EntityTickMixin when allTypesMode is false.
      */
@@ -615,6 +698,7 @@ public class EntityProfiler {
 
     private void resetState() {
         allTypesMode = false;
+        hotspotMode = false;
         locateMode = false;
         locateDetail = false;
         debugMode = false;
@@ -629,6 +713,35 @@ public class EntityProfiler {
         perBEType.clear();
         perBEDim.clear();
         debugTickCounts.clear();
+        hotspotData.clear();
+    }
+
+    private List<HotspotResult> computeHotspotResults() {
+        java.util.ArrayList<HotspotResult> all = new java.util.ArrayList<>();
+        for (var dimEntry : hotspotData.entrySet()) {
+            ResourceKey<Level> dim = dimEntry.getKey();
+            for (var chunkEntry : dimEntry.getValue().entrySet()) {
+                ChunkPos chunk = chunkEntry.getKey();
+                // Find the single dominant type (highest MSPT) in this chunk
+                @Nullable Identifier dominantType = null;
+                double dominantMspt = 0.0;
+                long dominantCount = 0;
+                for (var typeEntry : chunkEntry.getValue().entrySet()) {
+                    long[] data = typeEntry.getValue();
+                    double mspt = data[0] / (ticksRequested * 1_000_000.0);
+                    if (mspt > dominantMspt) {
+                        dominantMspt = mspt;
+                        dominantType = typeEntry.getKey();
+                        dominantCount = Math.max(1L, data[1] / ticksRequested);
+                    }
+                }
+                if (dominantType != null && dominantMspt >= 2.0) {
+                    all.add(new HotspotResult(chunk, dim, dominantType, dominantMspt, dominantCount));
+                }
+            }
+        }
+        all.sort((a, b) -> Double.compare(b.mspt(), a.mspt()));
+        return all.size() > 5 ? all.subList(0, 5) : all;
     }
 
     private void completeSession() {
@@ -667,6 +780,9 @@ public class EntityProfiler {
                         ? ResultFormatter.dimensionName(targetDim)
                         : "all dimensions";
                 ResultFormatter.sendBELocateResults(src, results, scopeLabel + " (ticking only)", dimName, locateDetail);
+            } else if (hotspotMode) {
+                List<HotspotResult> results = computeHotspotResults();
+                ResultFormatter.sendHotspotResults(src, results, ticksRequested);
             } else if (allTypesMode) {
                 String scopeLabel;
                 if (targetDim == null) {

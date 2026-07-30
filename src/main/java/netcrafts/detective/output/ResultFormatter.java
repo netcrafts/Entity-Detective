@@ -23,6 +23,8 @@ import netcrafts.detective.query.ChunkLoaderQuery;
 import netcrafts.detective.query.ChunkLoaderQuery.ChunkLoaderResult;
 import netcrafts.detective.query.ChunkLoaderQuery.LoaderEntry;
 import netcrafts.detective.query.ChunkLoaderQuery.LoaderType;
+import netcrafts.detective.query.EntityProfiler;
+import netcrafts.detective.query.EntityProfiler.HotspotResult;
 import netcrafts.detective.query.EntityQuery.BELocateResult;
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
 import netcrafts.detective.query.EntityQuery.EntityTypeCount;
@@ -45,6 +47,66 @@ public class ResultFormatter {
     private static final int COLOR_LOW    = 0x55FF55; // <50%
     private static final int COLOR_MEDIUM = 0xFFFF55; // 50–85%
     private static final int COLOR_HIGH   = 0xFF5555; // >85%
+
+    // Color thresholds for hotspot MSPT: green → yellow → red
+    private static final double HOTSPOT_MSPT_MEDIUM = 5.0;
+    private static final double HOTSPOT_MSPT_HIGH   = 15.0;
+
+    // -------------------------------------------------------------------------
+    // Hotspot display
+    // -------------------------------------------------------------------------
+
+    public static void sendHotspotResults(
+            CommandSourceStack source,
+            List<HotspotResult> results,
+            int ticks) {
+        source.sendSuccess(() -> Component.literal(
+                "-- Entity Hotspots (" + ticks + " tick sample) --")
+                .withStyle(ChatFormatting.GOLD), false);
+
+        if (results.isEmpty()) {
+            source.sendSuccess(() -> Component.literal(
+                    "  No hotspots found above 2 ms.")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        for (HotspotResult r : results) {
+            source.sendSuccess(() -> formatHotspotLine(r), false);
+        }
+    }
+
+    private static MutableComponent formatHotspotLine(HotspotResult r) {
+        ChunkPos pos = r.chunk();
+        String dimName = dimensionName(r.dim());
+        double mspt = r.mspt();
+
+        // Click-to-tp on chunk coords (centre of chunk, current Y)
+        String tpCmd = String.format("/tp @s %d ~ %d", pos.getMiddleBlockX(), pos.getMiddleBlockZ());
+        ClickEvent click = new ClickEvent.SuggestCommand(tpCmd);
+
+        int msptColor;
+        if (mspt < HOTSPOT_MSPT_MEDIUM)      msptColor = COLOR_LOW;
+        else if (mspt < HOTSPOT_MSPT_HIGH)   msptColor = COLOR_MEDIUM;
+        else                                  msptColor = COLOR_HIGH;
+
+        MutableComponent coords = Component.literal(
+                String.format("  [%5d,%5d]", pos.x(), pos.z()))
+                .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
+        MutableComponent dim = Component.literal(
+                String.format("  %-10s", dimName))
+                .withStyle(ChatFormatting.GRAY);
+        MutableComponent count = Component.literal(
+                String.format("  %5d x ", r.count()))
+                .withStyle(ChatFormatting.WHITE);
+        MutableComponent type = Component.literal(r.typeId().toString())
+                .withStyle(ChatFormatting.GREEN);
+        MutableComponent msptPart = Component.literal(
+                String.format("  %.1f ms", mspt))
+                .withStyle(Style.EMPTY.withColor(msptColor));
+
+        return coords.append(dim).append(count).append(type).append(msptPart);
+    }
 
     // -------------------------------------------------------------------------
     // Mobcap display

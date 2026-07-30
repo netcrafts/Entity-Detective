@@ -4,10 +4,4 @@
   One line per feature or fix. Keep entries short and user-facing.
 -->
 
-- **Minecraft 26.2**: ported to Minecraft 26.2 (Fabric Loader 0.19.3, Fabric API 0.152.1+26.2).
-- **New command**: `/entitydetective chunks` — detects active portal chunk loaders (shown as paired OW ↔ Nether lines) and ender pearl stasis chambers across all dimensions. Coordinates are clickable `/tp` suggestions when you are in the matching dimension (green), non-clickable otherwise (red). Unpaired entries are marked `(unconfirmed)`.
-- **New flag**: `--ticking-only` for `entity locate <be_type>` — runs a short observation window and returns only block entity positions that actually ticked.
-- **New flag**: `--debug` for `entity profile <be_type>` — reports per-position tick counts instead of aggregate MSPT, useful for pinpointing which specific instance of a type is active.
-- **New flag**: `--world <dim>` for `entity profile <type>` — profile a single entity or block entity type scoped to one dimension without requiring a player source.
-- **New alias**: `/ed` as a shorthand for `/entitydetective`.
-- **Mod attribution**: modded entity and block entity types now show a `[modid]` prefix in gold in profiler output.
+- **New command**: `/entitydetective hotspot` — runs a 20-tick scan across all loaded dimensions and reports the top entity-cost chunks, showing chunk coordinates (clickable `/tp`), dominant entity type, average entity count, and MSPT. Results are colour-coded green (<5 ms), yellow (5–15 ms), red (≥15 ms). Chunks below 2 ms are filtered out.
