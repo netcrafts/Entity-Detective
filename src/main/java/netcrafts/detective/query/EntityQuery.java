@@ -60,7 +60,8 @@ public class EntityQuery {
             ServerLevel world,
             MobCategory category,
             boolean lazyOnly,
-            boolean includePersistent) {
+            boolean includePersistent,
+            PersistenceType subType) {
 
         Map<ChunkPos, List<Entity>> byChunk = new HashMap<>();
 
@@ -77,7 +78,7 @@ public class EntityQuery {
                             || mob.isLeashed());
 
                 if (includePersistent) {
-                    return isPersistent;
+                    return isPersistent && (subType == PersistenceType.ALL || subType.matches(entity));
                 } else {
                     return !isPersistent;
                 }
@@ -219,7 +220,7 @@ public class EntityQuery {
      * If persistent is true, only counts persistent mobs; otherwise excludes them.
      */
     public static List<EntityTypeCount> countEntitiesByCategory(
-            ServerLevel world, MobCategory category, boolean persistent) {
+            ServerLevel world, MobCategory category, boolean persistent, PersistenceType subType) {
         ArrayList<Entity> all = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
             if (entity.getType().getCategory() != category) return false;
@@ -228,7 +229,7 @@ public class EntityQuery {
                         || mob.requiresCustomPersistence()
                         || mob.isPassenger()
                         || mob.isLeashed());
-            return persistent == isPersistent;
+            return persistent == isPersistent && (subType == PersistenceType.ALL || !persistent || subType.matches(entity));
         }, all);
 
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
@@ -251,7 +252,7 @@ public class EntityQuery {
      * Results are sorted descending by count.
      */
     public static List<EntityTypeCount> countLazyByCategory(
-            ServerLevel world, MobCategory category, boolean persistentOnly) {
+            ServerLevel world, MobCategory category, boolean persistentOnly, PersistenceType subType) {
         ArrayList<Entity> all = new ArrayList<>();
         world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> {
             if (entity.getType().getCategory() != category) return false;
@@ -261,7 +262,7 @@ public class EntityQuery {
                         || mob.requiresCustomPersistence()
                         || mob.isPassenger()
                         || mob.isLeashed());
-            return persistentOnly == isPersistent;
+            return persistentOnly == isPersistent && (subType == PersistenceType.ALL || !persistentOnly || subType.matches(entity));
         }, all);
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (Entity entity : all) {
@@ -450,6 +451,7 @@ public class EntityQuery {
             ServerLevel world,
             MobCategory category,
             boolean persistent,
+            PersistenceType subType,
             Vec3 centre,
             int chunkRange) {
 
@@ -464,7 +466,7 @@ public class EntityQuery {
                         || mob.requiresCustomPersistence()
                         || mob.isPassenger()
                         || mob.isLeashed());
-            return persistent == isPersistent;
+            return persistent == isPersistent && (subType == PersistenceType.ALL || !persistent || subType.matches(entity));
         }, all);
 
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
@@ -488,6 +490,7 @@ public class EntityQuery {
             ServerLevel world,
             MobCategory category,
             boolean persistentOnly,
+            PersistenceType subType,
             Vec3 centre,
             int chunkRange) {
 
@@ -503,7 +506,7 @@ public class EntityQuery {
                         || mob.requiresCustomPersistence()
                         || mob.isPassenger()
                         || mob.isLeashed());
-            return persistentOnly == isPersistent;
+            return persistentOnly == isPersistent && (subType == PersistenceType.ALL || !persistentOnly || subType.matches(entity));
         }, all);
         Map<Identifier, long[]> counts = new LinkedHashMap<>();
         for (Entity entity : all) {
@@ -733,6 +736,7 @@ public class EntityQuery {
             MobCategory category,
             boolean lazyOnly,
             boolean persistentOnly,
+            PersistenceType subType,
             Vec3 centre,
             int chunkRange) {
 
@@ -748,7 +752,7 @@ public class EntityQuery {
                         || mob.requiresCustomPersistence()
                         || mob.isPassenger()
                         || mob.isLeashed());
-            return persistentOnly == isPersistent;
+            return persistentOnly == isPersistent && (subType == PersistenceType.ALL || !persistentOnly || subType.matches(entity));
         }, matched);
 
         for (Entity entity : matched) {

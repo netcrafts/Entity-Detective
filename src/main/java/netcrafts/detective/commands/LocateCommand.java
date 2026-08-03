@@ -32,11 +32,13 @@ import net.minecraft.world.phys.Vec3;
 import netcrafts.detective.EntityDetective;
 import netcrafts.detective.output.ResultFormatter;
 import netcrafts.detective.query.ChunkLoaderQuery;
+import netcrafts.detective.query.ChunkLoaderQuery.LoaderType;
 import netcrafts.detective.query.EntityProfiler;
 import netcrafts.detective.query.EntityQuery;
 import netcrafts.detective.query.EntityQuery.ItemTypeCount;
 import netcrafts.detective.query.EntityQuery.EntityTypeCount;
 import netcrafts.detective.query.MobCapInfo;
+import netcrafts.detective.query.PersistenceType;
 import netcrafts.detective.query.RangeFilter;
 
 import org.jetbrains.annotations.Nullable;
@@ -95,6 +97,19 @@ public class LocateCommand {
     private static final SuggestionProvider<CommandSourceStack> DIM_SUGGESTIONS =
             (ctx, builder) -> SharedSuggestionProvider.suggest(DIMENSIONS, builder);
 
+    private static final SuggestionProvider<CommandSourceStack> PERSIST_TYPE_SUGGESTIONS =
+            (ctx, builder) -> { PersistenceType.COMMAND_NAMES.forEach(builder::suggest); return builder.buildFuture(); };
+
+    private static PersistenceType parsePersistenceType(CommandContext<CommandSourceStack> ctx) {
+        String name = StringArgumentType.getString(ctx, "persistType");
+        PersistenceType t = PersistenceType.fromCommandName(name);
+        if (t == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "Unknown persistence type '" + name + "'. Valid: " + String.join(", ", PersistenceType.COMMAND_NAMES)));
+        }
+        return t != null ? t : PersistenceType.ALL;
+    }
+
     private static final SuggestionProvider<CommandSourceStack> ENTITY_TYPE_SUGGESTIONS =
             (ctx, builder) -> {
                 java.util.Set<String> keys = new java.util.TreeSet<>();
@@ -136,6 +151,14 @@ public class LocateCommand {
                 return builder.buildFuture();
             };
 
+    private static final SuggestionProvider<CommandSourceStack> ONLINE_PLAYER_SUGGESTIONS =
+            (ctx, builder) -> {
+                ctx.getSource().getServer().getPlayerList().getPlayers()
+                        .stream().map(p -> p.getName().getString())
+                        .forEach(builder::suggest);
+                return builder.buildFuture();
+            };
+
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         LiteralCommandNode<CommandSourceStack> mainNode = dispatcher.register(
             Commands.literal("entitydetective")
@@ -170,40 +193,44 @@ public class LocateCommand {
                         .suggests(CATEGORY_SUGGESTIONS)
                         .executes(ctx -> executeMobSummary(ctx, null, false))
                         .then(Commands.literal("--detail")
-                            .executes(ctx -> executeMobDetail(ctx, null, false, false))
+                            .executes(ctx -> executeMobDetail(ctx, null, false, false, PersistenceType.ALL))
                         )
                         .then(Commands.literal("--lazy-only")
                             .executes(ctx -> executeLazyMobList(ctx, null, false))
                             .then(Commands.literal("--detail")
-                                .executes(ctx -> executeMobDetail(ctx, null, true, false))
+                                .executes(ctx -> executeMobDetail(ctx, null, true, false, PersistenceType.ALL))
                             )
                             .then(Commands.literal("--world")
                                 .then(Commands.argument("dim", StringArgumentType.word())
                                     .suggests(DIM_SUGGESTIONS)
                                     .executes(ctx -> executeLazyMobList(ctx, StringArgumentType.getString(ctx, "dim"), false))
                                     .then(Commands.literal("--detail")
-                                        .executes(ctx -> executeMobDetail(ctx, StringArgumentType.getString(ctx, "dim"), true, false))
+                                        .executes(ctx -> executeMobDetail(ctx, StringArgumentType.getString(ctx, "dim"), true, false, PersistenceType.ALL))
                                     )
                                 )
                             )
                             .then(Commands.literal("--persistent")
                                 .executes(ctx -> executeLazyMobList(ctx, null, true))
                                 .then(Commands.literal("--detail")
-                                    .executes(ctx -> executeMobDetail(ctx, null, true, true))
+                                    .executes(ctx -> executeMobDetail(ctx, null, true, true, PersistenceType.ALL))
                                 )
                             )
                         )
                         .then(Commands.literal("--persistent")
-                            .executes(ctx -> executePersistentMobList(ctx, null))
-                            .then(Commands.literal("--detail")
-                                .executes(ctx -> executeMobDetail(ctx, null, false, true))
-                            )
-                            .then(Commands.literal("--world")
-                                .then(Commands.argument("dim", StringArgumentType.word())
-                                    .suggests(DIM_SUGGESTIONS)
-                                    .executes(ctx -> executePersistentMobList(ctx, StringArgumentType.getString(ctx, "dim")))
-                                    .then(Commands.literal("--detail")
-                                        .executes(ctx -> executeMobDetail(ctx, StringArgumentType.getString(ctx, "dim"), false, true))
+                            .executes(ctx -> executePersistentMobList(ctx, null, PersistenceType.ALL))
+                            .then(Commands.argument("persistType", StringArgumentType.word())
+                                .suggests(PERSIST_TYPE_SUGGESTIONS)
+                                .executes(ctx -> executePersistentMobList(ctx, null, parsePersistenceType(ctx)))
+                                .then(Commands.literal("--detail")
+                                    .executes(ctx -> executeMobDetail(ctx, null, false, true, parsePersistenceType(ctx)))
+                                )
+                                .then(Commands.literal("--world")
+                                    .then(Commands.argument("dim", StringArgumentType.word())
+                                        .suggests(DIM_SUGGESTIONS)
+                                        .executes(ctx -> executePersistentMobList(ctx, StringArgumentType.getString(ctx, "dim"), parsePersistenceType(ctx)))
+                                        .then(Commands.literal("--detail")
+                                            .executes(ctx -> executeMobDetail(ctx, StringArgumentType.getString(ctx, "dim"), false, true, parsePersistenceType(ctx)))
+                                        )
                                     )
                                 )
                             )
@@ -213,7 +240,7 @@ public class LocateCommand {
                                 .suggests(DIM_SUGGESTIONS)
                                 .executes(ctx -> executeMobSummary(ctx, StringArgumentType.getString(ctx, "dim"), false))
                                 .then(Commands.literal("--detail")
-                                    .executes(ctx -> executeMobDetail(ctx, StringArgumentType.getString(ctx, "dim"), false, false))
+                                    .executes(ctx -> executeMobDetail(ctx, StringArgumentType.getString(ctx, "dim"), false, false, PersistenceType.ALL))
                                 )
                             )
                         )
@@ -221,24 +248,28 @@ public class LocateCommand {
                             .then(Commands.argument("range", IntegerArgumentType.integer(RangeFilter.MIN_RANGE_CHUNKS, RangeFilter.MAX_RANGE_CHUNKS))
                                 .executes(ctx -> executeMobSummaryRange(ctx))
                                 .then(Commands.literal("--detail")
-                                    .executes(ctx -> executeMobDetailRange(ctx, false, false))
+                                    .executes(ctx -> executeMobDetailRange(ctx, false, false, PersistenceType.ALL))
                                 )
                                 .then(Commands.literal("--lazy-only")
                                     .executes(ctx -> executeMobLazyListRange(ctx, false))
                                     .then(Commands.literal("--detail")
-                                        .executes(ctx -> executeMobDetailRange(ctx, true, false))
+                                        .executes(ctx -> executeMobDetailRange(ctx, true, false, PersistenceType.ALL))
                                     )
                                     .then(Commands.literal("--persistent")
                                         .executes(ctx -> executeMobLazyListRange(ctx, true))
                                         .then(Commands.literal("--detail")
-                                            .executes(ctx -> executeMobDetailRange(ctx, true, true))
+                                            .executes(ctx -> executeMobDetailRange(ctx, true, true, PersistenceType.ALL))
                                         )
                                     )
                                 )
                                 .then(Commands.literal("--persistent")
-                                    .executes(ctx -> executeMobPersistentListRange(ctx))
-                                    .then(Commands.literal("--detail")
-                                        .executes(ctx -> executeMobDetailRange(ctx, false, true))
+                                    .executes(ctx -> executeMobPersistentListRange(ctx, PersistenceType.ALL))
+                                    .then(Commands.argument("persistType", StringArgumentType.word())
+                                        .suggests(PERSIST_TYPE_SUGGESTIONS)
+                                        .executes(ctx -> executeMobPersistentListRange(ctx, parsePersistenceType(ctx)))
+                                        .then(Commands.literal("--detail")
+                                            .executes(ctx -> executeMobDetailRange(ctx, false, true, parsePersistenceType(ctx)))
+                                        )
                                     )
                                 )
                             )
@@ -530,7 +561,21 @@ public class LocateCommand {
 
                 // /entitydetective chunks — list all active portal loaders and stasis chambers
                 .then(Commands.literal("chunks")
-                    .executes(ctx -> executeChunkLoaders(ctx))
+                    .executes(ctx -> executeChunkLoaders(ctx, null))
+                    .then(Commands.literal("loaders")
+                        .executes(ctx -> executeChunkLoaders(ctx, LoaderType.PORTAL))
+                    )
+                    .then(Commands.literal("stasis")
+                        .executes(ctx -> executeChunkLoaders(ctx, LoaderType.ENDER_PEARL))
+                    )
+                )
+
+                // /entitydetective nark <playerName> — profile all entities in 21x21 chunks around target
+                .then(Commands.literal("nark")
+                    .then(Commands.argument("playerName", StringArgumentType.word())
+                        .suggests(ONLINE_PLAYER_SUGGESTIONS)
+                        .executes(ctx -> executeNark(ctx))
+                    )
                 )
         );
         dispatcher.register(Commands.literal("ed").redirect(mainNode));
@@ -549,15 +594,41 @@ public class LocateCommand {
         }
     }
 
-    private static int executeChunkLoaders(CommandContext<CommandSourceStack> ctx) {
+    private static int executeChunkLoaders(CommandContext<CommandSourceStack> ctx, @Nullable LoaderType filter) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
         try {
             var results = ChunkLoaderQuery.findAll(source.getServer());
+            if (filter != null) {
+                results = results.stream()
+                        .filter(r -> r.primary().type() == filter)
+                        .toList();
+            }
             ResultFormatter.sendChunkLoaderResults(source, results);
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in chunks command", e);
+            source.sendFailure(Component.literal(ERR_INTERNAL));
+            return 0;
+        }
+    }
+
+    private static int executeNark(CommandContext<CommandSourceStack> ctx) {
+        if (onCooldown(ctx)) return 0;
+        CommandSourceStack source = ctx.getSource();
+        try {
+            String playerName = StringArgumentType.getString(ctx, "playerName");
+            ServerPlayer target = source.getServer().getPlayerList().getPlayerByName(playerName);
+            if (target == null) {
+                source.sendFailure(Component.literal("Player '" + playerName + "' is not online."));
+                return 0;
+            }
+            Vec3 centre = target.position();
+            ResourceKey<Level> dim = target.level().dimension();
+            EntityProfiler.INSTANCE.startAllTypesForPlayer(source, 100, playerName, centre, dim, 10);
+            return 1;
+        } catch (Exception e) {
+            EntityDetective.LOGGER.error("EntityDetective: unexpected error in nark command", e);
             source.sendFailure(Component.literal(ERR_INTERNAL));
             return 0;
         }
@@ -615,7 +686,7 @@ public class LocateCommand {
 
             for (ServerLevel world : worlds) {
                 String dimName = ResultFormatter.dimensionName(world.dimension());
-                var counts = EntityQuery.countEntitiesByCategory(world, category, persistent);
+                var counts = EntityQuery.countEntitiesByCategory(world, category, persistent, PersistenceType.ALL);
                 ResultFormatter.sendMobSummary(source, counts, categoryName, dimName);
             }
             return 1;
@@ -659,7 +730,7 @@ public class LocateCommand {
 
             for (ServerLevel world : worlds) {
                 String dimName = ResultFormatter.dimensionName(world.dimension());
-                var counts = EntityQuery.countLazyByCategory(world, category, persistent);
+                var counts = EntityQuery.countLazyByCategory(world, category, persistent, PersistenceType.ALL);
                 String label = categoryName + (persistent ? " (lazy + persistent)" : " (lazy only)");
                 ResultFormatter.sendMobSummary(source, counts, label, dimName);
             }
@@ -673,7 +744,8 @@ public class LocateCommand {
 
     private static int executePersistentMobList(
             CommandContext<CommandSourceStack> ctx,
-            @Nullable String dimArg) {
+            @Nullable String dimArg,
+            PersistenceType subType) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
         try {
@@ -703,8 +775,9 @@ public class LocateCommand {
 
             for (ServerLevel world : worlds) {
                 String dimName = ResultFormatter.dimensionName(world.dimension());
-                var counts = EntityQuery.countEntitiesByCategory(world, category, true);
-                ResultFormatter.sendMobSummary(source, counts, categoryName + " (persistent)", dimName);
+                var counts = EntityQuery.countEntitiesByCategory(world, category, true, subType);
+                String subLabel = subType != PersistenceType.ALL ? ": " + subType.name().toLowerCase().replace('_', '-') : "";
+                ResultFormatter.sendMobSummary(source, counts, categoryName + " (persistent" + subLabel + ")", dimName);
             }
             return 1;
         } catch (Exception e) {
@@ -1035,7 +1108,8 @@ public class LocateCommand {
             CommandContext<CommandSourceStack> ctx,
             @Nullable String dimArg,
             boolean lazyOnly,
-            boolean persistent) {
+            boolean persistent,
+            PersistenceType subType) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
         try {
@@ -1062,8 +1136,9 @@ public class LocateCommand {
             }
             for (ServerLevel world : worlds) {
                 String dimName = ResultFormatter.dimensionName(world.dimension());
-                var results = EntityQuery.findEntities(world, category, lazyOnly, persistent);
-                String filter = (lazyOnly ? " (lazy)" : "") + (persistent ? " (persistent)" : "");
+                var results = EntityQuery.findEntities(world, category, lazyOnly, persistent, subType);
+                String subLabel = (persistent && subType != PersistenceType.ALL) ? ": " + subType.name().toLowerCase().replace('_', '-') : "";
+                String filter = (lazyOnly ? " (lazy)" : "") + (persistent ? " (persistent" + subLabel + ")" : "");
                 ResultFormatter.sendChunkGroupedDetail(source, results, categoryName + filter, dimName);
             }
             return 1;
@@ -1077,7 +1152,8 @@ public class LocateCommand {
     private static int executeMobDetailRange(
             CommandContext<CommandSourceStack> ctx,
             boolean lazyOnly,
-            boolean persistent) {
+            boolean persistent,
+            PersistenceType subType) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
         if (RangeFilter.sourceIsNotPlayer(source)) return 0;
@@ -1094,8 +1170,9 @@ public class LocateCommand {
             int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
             ServerLevel world = source.getLevel();
-            var results = EntityQuery.findByCategoryInRange(world, category, lazyOnly, persistent, centre, chunkRange);
-            String filter = (lazyOnly ? " (lazy)" : "") + (persistent ? " (persistent)" : "");
+            var results = EntityQuery.findByCategoryInRange(world, category, lazyOnly, persistent, subType, centre, chunkRange);
+            String subLabel = (persistent && subType != PersistenceType.ALL) ? ": " + subType.name().toLowerCase().replace('_', '-') : "";
+            String filter = (lazyOnly ? " (lazy)" : "") + (persistent ? " (persistent" + subLabel + ")" : "");
             ResultFormatter.sendChunkGroupedDetail(source, results,
                     categoryName + " (" + RangeFilter.rangeLabel(chunkRange) + ")" + filter,
                     ResultFormatter.dimensionName(world.dimension()));
@@ -1218,7 +1295,7 @@ public class LocateCommand {
             int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
             ServerLevel world = source.getLevel();
-            var counts = EntityQuery.countEntitiesByCategoryInRange(world, category, false, centre, chunkRange);
+            var counts = EntityQuery.countEntitiesByCategoryInRange(world, category, false, PersistenceType.ALL, centre, chunkRange);
             ResultFormatter.sendMobSummary(source, counts,
                     categoryName + " (" + RangeFilter.rangeLabel(chunkRange) + ")",
                     ResultFormatter.dimensionName(world.dimension()));
@@ -1247,7 +1324,7 @@ public class LocateCommand {
             int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
             ServerLevel world = source.getLevel();
-            var counts = EntityQuery.countLazyByCategoryInRange(world, category, persistent, centre, chunkRange);
+            var counts = EntityQuery.countLazyByCategoryInRange(world, category, persistent, PersistenceType.ALL, centre, chunkRange);
             String label = categoryName + " (" + RangeFilter.rangeLabel(chunkRange) + ")" + (persistent ? " (lazy + persistent)" : " (lazy only)");
             ResultFormatter.sendMobSummary(source, counts, label,
                     ResultFormatter.dimensionName(world.dimension()));
@@ -1259,7 +1336,7 @@ public class LocateCommand {
         }
     }
 
-    private static int executeMobPersistentListRange(CommandContext<CommandSourceStack> ctx) {
+    private static int executeMobPersistentListRange(CommandContext<CommandSourceStack> ctx, PersistenceType subType) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
         if (RangeFilter.sourceIsNotPlayer(source)) return 0;
@@ -1276,9 +1353,10 @@ public class LocateCommand {
             int chunkRange = IntegerArgumentType.getInteger(ctx, "range");
             Vec3 centre = source.getPosition();
             ServerLevel world = source.getLevel();
-            var counts = EntityQuery.countEntitiesByCategoryInRange(world, category, true, centre, chunkRange);
+            var counts = EntityQuery.countEntitiesByCategoryInRange(world, category, true, subType, centre, chunkRange);
+            String subLabel = subType != PersistenceType.ALL ? ": " + subType.name().toLowerCase().replace('_', '-') : "";
             ResultFormatter.sendMobSummary(source, counts,
-                    categoryName + " (" + RangeFilter.rangeLabel(chunkRange) + ") (persistent)",
+                    categoryName + " (" + RangeFilter.rangeLabel(chunkRange) + ") (persistent" + subLabel + ")",
                     ResultFormatter.dimensionName(world.dimension()));
             return 1;
         } catch (Exception e) {

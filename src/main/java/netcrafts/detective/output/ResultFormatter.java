@@ -71,18 +71,19 @@ public class ResultFormatter {
             return;
         }
 
+        String tpTarget = tpTarget(source);
         for (HotspotResult r : results) {
-            source.sendSuccess(() -> formatHotspotLine(r), false);
+            source.sendSuccess(() -> formatHotspotLine(r, tpTarget), false);
         }
     }
 
-    private static MutableComponent formatHotspotLine(HotspotResult r) {
+    private static MutableComponent formatHotspotLine(HotspotResult r, String tpTarget) {
         ChunkPos pos = r.chunk();
         String dimName = dimensionName(r.dim());
         double mspt = r.mspt();
 
         // Click-to-tp on chunk coords (centre of chunk, current Y)
-        String tpCmd = String.format("/tp @s %d ~ %d", pos.getMiddleBlockX(), pos.getMiddleBlockZ());
+        String tpCmd = String.format("/tp " + tpTarget + " %d ~ %d", pos.getMiddleBlockX(), pos.getMiddleBlockZ());
         ClickEvent click = new ClickEvent.SuggestCommand(tpCmd);
 
         int msptColor;
@@ -178,13 +179,14 @@ public class ResultFormatter {
                 totalEntities, results.size());
         source.sendSuccess(() -> Component.literal(header).withStyle(ChatFormatting.GOLD), false);
 
+        String tpTarget = tpTarget(source);
         int shown = Math.min(results.size(), MAX_CHUNKS_SHOWN);
         for (int i = 0; i < shown; i++) {
             QueryResult r = results.get(i);
-            source.sendSuccess(() -> formatChunkLine(r), false);
+            source.sendSuccess(() -> formatChunkLine(r, tpTarget), false);
             if (detail) {
                 for (Entity entity : r.entities()) {
-                    source.sendSuccess(() -> formatEntityDebugLine(entity), false);
+                    source.sendSuccess(() -> formatEntityDebugLine(entity, tpTarget), false);
                 }
             }
         }
@@ -200,7 +202,7 @@ public class ResultFormatter {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static MutableComponent formatEntityDebugLine(Entity entity) {
+    private static MutableComponent formatEntityDebugLine(Entity entity, String tpTarget) {
         // 5.5.2 / 5.5.8 — getKey() can return null for unregistered modded entity types
         @Nullable Identifier typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         String type = typeKey != null ? typeKey.toString() : "unknown:" + entity.getType().getDescriptionId();
@@ -208,7 +210,7 @@ public class ResultFormatter {
         String name   = cn != null ? " \"" + cn.getString() + "\"" : "";
         String reason = persistenceReason(entity);
         String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
-        String tpCommand = String.format("/tp @s %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
+        String tpCommand = String.format("/tp " + tpTarget + " %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
         MutableComponent line = Component.literal("    ")
                 .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCommand)));
         line.append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
@@ -224,21 +226,22 @@ public class ResultFormatter {
     private static String persistenceReason(Entity entity) {
         if (!(entity instanceof Mob mob)) return "non-mob";
         if (mob.hasCustomName() && mob.isPersistenceRequired()) return "name tagged";
-        if (mob.isPersistenceRequired()) return "holding item";
-        if (mob.isPassenger()) return "riding vehicle";
         if (mob.isLeashed()) return "leashed";
+        if (mob.isPassenger()) return "riding vehicle";
+        if (mob.isPersistenceRequired() && (!mob.getMainHandItem().isEmpty() || !mob.getOffhandItem().isEmpty())) return "holding item";
+        if (mob.isPersistenceRequired()) return "structure spawn";
         if (mob.requiresCustomPersistence()) return "custom persistence";
         return "unknown";
     }
 
-    private static MutableComponent formatChunkLine(QueryResult r) {
+    private static MutableComponent formatChunkLine(QueryResult r, String tpTarget) {
         ChunkPos pos = r.chunkPos();
         int count = r.entities().size();
         int midX = pos.getMiddleBlockX();
         int midZ = pos.getMiddleBlockZ();
 
         // Suggest /tp so the admin can click to teleport to the chunk center
-        String tpCommand = String.format("/tp @s %d ~ %d", midX, midZ);
+        String tpCommand = String.format("/tp " + tpTarget + " %d ~ %d", midX, midZ);
         ClickEvent click = new ClickEvent.SuggestCommand(tpCommand);
 
         MutableComponent coords = Component.literal(
@@ -275,13 +278,14 @@ public class ResultFormatter {
                 label, dimName, total, results.size());
         source.sendSuccess(() -> Component.literal(header).withStyle(ChatFormatting.GOLD), false);
 
+        String tpTarget = tpTarget(source);
         int shown = Math.min(results.size(), MAX_CHUNKS_SHOWN);
         for (int i = 0; i < shown; i++) {
             BELocateResult r = results.get(i);
-            source.sendSuccess(() -> formatBEChunkLine(r), false);
+            source.sendSuccess(() -> formatBEChunkLine(r, tpTarget), false);
             if (detail) {
                 for (BlockPos pos : r.positions()) {
-                    source.sendSuccess(() -> formatBEPosLine(pos), false);
+                    source.sendSuccess(() -> formatBEPosLine(pos, tpTarget), false);
                 }
             }
         }
@@ -293,13 +297,13 @@ public class ResultFormatter {
         }
     }
 
-    private static MutableComponent formatBEChunkLine(BELocateResult r) {
+    private static MutableComponent formatBEChunkLine(BELocateResult r, String tpTarget) {
         ChunkPos pos = r.chunkPos();
         int count = r.positions().size();
         int midX = pos.getMiddleBlockX();
         int midZ = pos.getMiddleBlockZ();
 
-        String tpCommand = String.format("/tp @s %d ~ %d", midX, midZ);
+        String tpCommand = String.format("/tp " + tpTarget + " %d ~ %d", midX, midZ);
         ClickEvent click = new ClickEvent.SuggestCommand(tpCommand);
 
         MutableComponent coords = Component.literal(
@@ -312,9 +316,9 @@ public class ResultFormatter {
         return coords.append(countPart);
     }
 
-    private static MutableComponent formatBEPosLine(BlockPos pos) {
+    private static MutableComponent formatBEPosLine(BlockPos pos, String tpTarget) {
         String coords = String.format("[%d, %d, %d]", pos.getX(), pos.getY(), pos.getZ());
-        String tpCommand = String.format("/tp @s %d %d %d", pos.getX(), pos.getY(), pos.getZ());
+        String tpCommand = String.format("/tp " + tpTarget + " %d %d %d", pos.getX(), pos.getY(), pos.getZ());
         return Component.literal("    ")
                 .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCommand)))
                 .append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
@@ -346,6 +350,7 @@ public class ResultFormatter {
                 String.format("-- %s debug [%d ticks]: %d positions observed --", label, ticks, total))
                 .withStyle(ChatFormatting.GOLD), false);
 
+        String tpTarget = tpTarget(source);
         int shown = Math.min(total, MAX_CHUNKS_SHOWN);
         int i = 0;
         for (Map.Entry<BlockPos, Integer> entry : counts.entrySet()) {
@@ -355,7 +360,7 @@ public class ResultFormatter {
             int pct = ticks > 0 ? (tickCount * 100 / ticks) : 0;
             // Color: green <50%, yellow 50-85%, red >85%
             int color = pct > 85 ? COLOR_HIGH : pct >= 50 ? COLOR_MEDIUM : COLOR_LOW;
-            String tpCommand = String.format("/tp @s %d %d %d", pos.getX(), pos.getY(), pos.getZ());
+            String tpCommand = String.format("/tp " + tpTarget + " %d %d %d", pos.getX(), pos.getY(), pos.getZ());
             ClickEvent click = new ClickEvent.SuggestCommand(tpCommand);
             MutableComponent coordPart = Component.literal(
                     String.format("  [%d, %d, %d]", pos.getX(), pos.getY(), pos.getZ()))
@@ -745,12 +750,13 @@ public class ResultFormatter {
                 label, dimName, totalEntities, results.size());
         source.sendSuccess(() -> Component.literal(header).withStyle(ChatFormatting.GOLD), false);
 
+        String tpTarget = tpTarget(source);
         int shown = Math.min(results.size(), MAX_CHUNKS_SHOWN);
         for (int i = 0; i < shown; i++) {
             QueryResult r = results.get(i);
-            source.sendSuccess(() -> formatDetailChunkLine(r), false);
+            source.sendSuccess(() -> formatDetailChunkLine(r, tpTarget), false);
             for (Entity entity : r.entities()) {
-                source.sendSuccess(() -> formatDetailEntityLine(entity), false);
+                source.sendSuccess(() -> formatDetailEntityLine(entity, tpTarget), false);
             }
         }
 
@@ -765,20 +771,20 @@ public class ResultFormatter {
                 .withStyle(ChatFormatting.GRAY), false);
     }
 
-    private static MutableComponent formatDetailChunkLine(QueryResult r) {
+    private static MutableComponent formatDetailChunkLine(QueryResult r, String tpTarget) {
         ChunkPos pos = r.chunkPos();
         int count = r.entities().size();
         int midX = pos.getMiddleBlockX();
         int midZ = pos.getMiddleBlockZ();
-        String tpCmd = String.format("/tp @s %d ~ %d", midX, midZ);
+        String tpCmd = String.format("/tp " + tpTarget + " %d ~ %d", midX, midZ);
         ClickEvent click = new ClickEvent.SuggestCommand(tpCmd);
-        String text = String.format("  Chunk (%d, %d)  \u00d7  %d  \u2192  /tp @s %d ~ %d",
+        String text = String.format("  Chunk (%d, %d)  \u00d7  %d  \u2192  /tp " + tpTarget + " %d ~ %d",
                 pos.x(), pos.z(), count, midX, midZ);
         return Component.literal(text)
                 .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
     }
 
-    private static MutableComponent formatDetailEntityLine(Entity entity) {
+    private static MutableComponent formatDetailEntityLine(Entity entity, String tpTarget) {
         String type;
         if (entity instanceof net.minecraft.world.entity.item.ItemEntity ie) {
             @Nullable Identifier itemKey = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
@@ -790,7 +796,7 @@ public class ResultFormatter {
         net.minecraft.network.chat.Component cn = entity.getCustomName();
         String name = cn != null ? " \"" + cn.getString() + "\"" : "";
         String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
-        String tpCmd = String.format("/tp @s %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
+        String tpCmd = String.format("/tp " + tpTarget + " %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
 
         MutableComponent line = Component.literal("    ")
                 .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCmd)));
@@ -869,8 +875,9 @@ public class ResultFormatter {
                 "-- lazy " + label + " [" + dimName + "]: " + entities.size() + " entities --")
                 .withStyle(ChatFormatting.GOLD), false);
 
+        String tpTarget = tpTarget(source);
         for (Entity entity : entities) {
-            source.sendSuccess(() -> formatLazyEntityLine(entity), false);
+            source.sendSuccess(() -> formatLazyEntityLine(entity, tpTarget), false);
         }
 
         source.sendSuccess(() -> Component.literal(
@@ -895,8 +902,9 @@ public class ResultFormatter {
                 "-- persistent " + label + " [" + dimName + "]: " + entities.size() + " entities --")
                 .withStyle(ChatFormatting.GOLD), false);
 
+        String tpTarget = tpTarget(source);
         for (Entity entity : entities) {
-            source.sendSuccess(() -> formatLazyEntityLine(entity), false);
+            source.sendSuccess(() -> formatLazyEntityLine(entity, tpTarget), false);
         }
 
         source.sendSuccess(() -> Component.literal(
@@ -904,7 +912,7 @@ public class ResultFormatter {
                 .withStyle(ChatFormatting.GRAY), false);
     }
 
-    private static MutableComponent formatLazyEntityLine(Entity entity) {
+    private static MutableComponent formatLazyEntityLine(Entity entity, String tpTarget) {
         String type;
         if (entity instanceof net.minecraft.world.entity.item.ItemEntity ie) {
             @Nullable Identifier itemKey = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
@@ -916,7 +924,7 @@ public class ResultFormatter {
         net.minecraft.network.chat.Component cn2 = entity.getCustomName();
         String name   = cn2 != null ? " \"" + cn2.getString() + "\"" : "";
         String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
-        String tpCmd  = String.format("/tp @s %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
+        String tpCmd  = String.format("/tp " + tpTarget + " %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
         MutableComponent line = Component.literal("  ")
                 .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCmd)));
         line.append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
@@ -953,27 +961,28 @@ public class ResultFormatter {
         source.sendSuccess(() -> Component.literal(headerStr).withStyle(ChatFormatting.GOLD), false);
 
         String playerDim = source.getLevel().dimension().identifier().getPath();
+        String tpTarget = tpTarget(source);
         for (ChunkLoaderResult result : results) {
-            source.sendSuccess(() -> formatChunkLoaderLine(result, playerDim), false);
+            source.sendSuccess(() -> formatChunkLoaderLine(result, playerDim, tpTarget), false);
         }
     }
 
-    private static MutableComponent formatChunkLoaderLine(ChunkLoaderResult result, String playerDim) {
+    private static MutableComponent formatChunkLoaderLine(ChunkLoaderResult result, String playerDim, String tpTarget) {
         LoaderEntry primary = result.primary();
         String typeLabel = primary.type() == LoaderType.PORTAL ? "Portal" : "Pearl ";
         MutableComponent line = Component.literal("  " + typeLabel + "  ").withStyle(ChatFormatting.WHITE);
-        line.append(formatChunkLink(primary, playerDim));
+        line.append(formatChunkLink(primary, playerDim, tpTarget));
         LoaderEntry paired = result.paired();
         if (paired != null) {
             line.append(Component.literal("   |  ").withStyle(ChatFormatting.GRAY));
-            line.append(formatChunkLink(paired, playerDim));
+            line.append(formatChunkLink(paired, playerDim, tpTarget));
         } else if (primary.type() == LoaderType.PORTAL) {
             line.append(Component.literal("  (unconfirmed)").withStyle(ChatFormatting.GRAY));
         }
         return line;
     }
 
-    private static MutableComponent formatChunkLink(LoaderEntry entry, String playerDim) {
+    private static MutableComponent formatChunkLink(LoaderEntry entry, String playerDim, String tpTarget) {
         String dimLabel = switch (entry.dimPath()) {
             case "overworld"  -> "OW";
             case "the_nether" -> "Nether";
@@ -982,7 +991,7 @@ public class ResultFormatter {
         };
         String coords = String.format("%s (%d, %d)", dimLabel, entry.pos().x(), entry.pos().z());
         if (entry.dimPath().equals(playerDim)) {
-            String tpCmd = String.format("/tp @s %d ~ %d",
+            String tpCmd = String.format("/tp " + tpTarget + " %d ~ %d",
                     entry.pos().getMiddleBlockX(), entry.pos().getMiddleBlockZ());
             Style style = Style.EMPTY
                     .withColor(ChatFormatting.GREEN)
@@ -990,6 +999,10 @@ public class ResultFormatter {
             return Component.literal(coords).withStyle(style);
         }
         return Component.literal(coords).withStyle(Style.EMPTY.withColor(ChatFormatting.RED));
+    }
+
+    static String tpTarget(CommandSourceStack source) {
+        return source.getEntity() != null ? source.getTextName() : "@s";
     }
 
     /**

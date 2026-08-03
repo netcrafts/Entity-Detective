@@ -607,9 +607,37 @@ public class EntityProfiler {
         return true;
     }
 
-    // -------------------------------------------------------------------------
-    // Recording methods (called from EntityTickMixin — hot path)
-    // -------------------------------------------------------------------------
+    /** Variant of startAllTypes that names the target player in the start message. */
+    public boolean startAllTypesForPlayer(
+            CommandSourceStack source,
+            int ticks,
+            String targetName,
+            Vec3 centre,
+            ResourceKey<Level> dim,
+            int chunkRange) {
+        if (active) {
+            source.sendFailure(Component.literal(
+                    "A profile is already running. Wait for it to complete."));
+            return false;
+        }
+        resetState();
+        allTypesMode = true;
+        playerChunkX = (int) Math.floor(centre.x) >> 4;
+        playerChunkZ = (int) Math.floor(centre.z) >> 4;
+        this.chunkRange = chunkRange;
+        targetDim = dim;
+        ticksRequested = ticks;
+        ticksRemaining = ticks;
+        requester = source;
+        active = true;
+
+        int side = 2 * chunkRange + 1;
+        int totalChunks = side * side;
+        String areaDesc = chunkRange == 0 ? "1-chunk area" : totalChunks + "-chunk (" + side + "x" + side + ") area";
+        source.sendSuccess(() -> Component.literal(
+                "Profiling all entity types in a " + areaDesc + " around " + targetName + " for " + ticks + " ticks..."), false);
+        return true;
+    }
 
     /**
      * Record a hotspot entity tick measurement, bucketed by (dim, chunk, typeId).
