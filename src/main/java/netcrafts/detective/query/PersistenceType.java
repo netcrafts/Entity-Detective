@@ -17,7 +17,7 @@ public enum PersistenceType {
             case NAME_TAGGED    -> mob.hasCustomName() && mob.isPersistenceRequired();
             case LEASHED        -> mob.isLeashed();
             case IN_VEHICLE     -> mob.isPassenger();
-            case HOLDING_ITEM   -> mob.isPersistenceRequired() && !mob.hasCustomName()
+            case HOLDING_ITEM   -> mob.isPersistenceRequired() && !mob.hasCustomName() && !mob.isPassenger()
                                    && (!mob.getMainHandItem().isEmpty() || !mob.getOffhandItem().isEmpty());
             case STRUCTURE_SPAWN -> mob.isPersistenceRequired() && !mob.hasCustomName()
                                     && mob.getMainHandItem().isEmpty() && mob.getOffhandItem().isEmpty();
