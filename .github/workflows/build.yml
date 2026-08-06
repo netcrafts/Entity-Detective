@@ -6,7 +6,10 @@
 # On version tags (v*), also creates a GitHub Release and attaches the jar.
 
 name: build
-on: [pull_request, push]
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
 
 jobs:
   build:
