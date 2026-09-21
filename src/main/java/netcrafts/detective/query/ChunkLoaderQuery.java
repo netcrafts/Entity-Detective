@@ -92,6 +92,9 @@ public class ChunkLoaderQuery {
         TicketStorage storage = ((DistanceManagerAccessor) dm).detective_getTicketStorage();
         Long2ObjectOpenHashMap<List<Ticket>> tickets = ((TicketStorageAccessor) storage).detective_getTickets();
 
+        // Moonrise (and similar optimization mods) replace the vanilla ticket system and may leave tickets null
+        if (tickets == null) return;
+
         for (Long2ObjectMap.Entry<List<Ticket>> entry : tickets.long2ObjectEntrySet()) {
             long posLong = entry.getLongKey();
             List<Ticket> list = entry.getValue();

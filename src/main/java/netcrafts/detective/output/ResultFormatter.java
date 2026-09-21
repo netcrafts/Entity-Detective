@@ -59,14 +59,15 @@ public class ResultFormatter {
     public static void sendHotspotResults(
             CommandSourceStack source,
             List<HotspotResult> results,
-            int ticks) {
+            int ticks,
+            double minMspt) {
         source.sendSuccess(() -> Component.literal(
                 "-- Entity Hotspots (" + ticks + " tick sample) --")
                 .withStyle(ChatFormatting.GOLD), false);
 
         if (results.isEmpty()) {
             source.sendSuccess(() -> Component.literal(
-                    "  No hotspots found above 2 ms.")
+                    String.format("  No hotspots found above %.1f ms.", minMspt))
                     .withStyle(ChatFormatting.YELLOW), false);
             return;
         }

@@ -117,6 +117,8 @@ public class EntityProfiler {
      * Used by {@code /ed hotspot}.
      */
     private boolean hotspotMode = false;
+    /** Minimum MSPT a chunk must exceed to appear in hotspot results. Default 2.0. */
+    private double hotspotThreshold = 2.0;
 
     /** dim → chunk → typeId → [totalNanos, entityTickCount] */
     private final Map<ResourceKey<Level>, Map<ChunkPos, Map<Identifier, long[]>>> hotspotData = new LinkedHashMap<>();
@@ -240,7 +242,7 @@ public class EntityProfiler {
      * then reports the top-5 (chunk, entity-type) pairs by MSPT.
      * Returns false if a session is already running.
      */
-    public boolean startHotspot(CommandSourceStack source) {
+    public boolean startHotspot(CommandSourceStack source, double minMspt) {
         if (active) {
             source.sendFailure(Component.literal(
                     "A profile is already running. Wait for it to complete."));
@@ -248,6 +250,7 @@ public class EntityProfiler {
         }
         resetState();
         hotspotMode = true;
+        hotspotThreshold = minMspt;
         ticksRequested = 20;
         ticksRemaining = 20;
         requester = source;
@@ -727,6 +730,7 @@ public class EntityProfiler {
     private void resetState() {
         allTypesMode = false;
         hotspotMode = false;
+        hotspotThreshold = 2.0;
         locateMode = false;
         locateDetail = false;
         debugMode = false;
@@ -763,7 +767,7 @@ public class EntityProfiler {
                         dominantCount = Math.max(1L, data[1] / ticksRequested);
                     }
                 }
-                if (dominantType != null && dominantMspt >= 2.0) {
+                if (dominantType != null && dominantMspt >= hotspotThreshold) {
                     all.add(new HotspotResult(chunk, dim, dominantType, dominantMspt, dominantCount));
                 }
             }
@@ -810,7 +814,7 @@ public class EntityProfiler {
                 ResultFormatter.sendBELocateResults(src, results, scopeLabel + " (ticking only)", dimName, locateDetail);
             } else if (hotspotMode) {
                 List<HotspotResult> results = computeHotspotResults();
-                ResultFormatter.sendHotspotResults(src, results, ticksRequested);
+                ResultFormatter.sendHotspotResults(src, results, ticksRequested, hotspotThreshold);
             } else if (allTypesMode) {
                 String scopeLabel;
                 if (targetDim == null) {

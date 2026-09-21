@@ -17,7 +17,7 @@
 	"mixins": ["entity-detective.mixins.json"],
 	"depends": {
 		"fabricloader": ">=0.19.1",
-		"minecraft": "~26.2",
+		"minecraft": "~26.3",
 		"java": ">=25",
 		"fabric-api": "*",
 		"fabric-permissions-api-v0": "*"

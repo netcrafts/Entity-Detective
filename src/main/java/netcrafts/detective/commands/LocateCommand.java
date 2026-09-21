@@ -1,6 +1,7 @@
 package netcrafts.detective.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -554,9 +555,12 @@ public class LocateCommand {
                         )
                     )
                 )
-                // /entitydetective hotspot — top-5 entity hotspot scan (20-tick sample, all dimensions)
+                // /entitydetective hotspot [minMspt] — top-5 entity hotspot scan (20-tick sample, all dimensions)
                 .then(Commands.literal("hotspot")
-                    .executes(ctx -> executeHotspot(ctx))
+                    .executes(ctx -> executeHotspot(ctx, 2.0))
+                    .then(Commands.argument("minMspt", DoubleArgumentType.doubleArg(0.0))
+                        .executes(ctx -> executeHotspot(ctx, DoubleArgumentType.getDouble(ctx, "minMspt")))
+                    )
                 )
 
                 // /entitydetective chunks — list all active portal loaders and stasis chambers
@@ -581,11 +585,11 @@ public class LocateCommand {
         dispatcher.register(Commands.literal("ed").redirect(mainNode));
     }
 
-    private static int executeHotspot(CommandContext<CommandSourceStack> ctx) {
+    private static int executeHotspot(CommandContext<CommandSourceStack> ctx, double minMspt) {
         if (onCooldown(ctx)) return 0;
         CommandSourceStack source = ctx.getSource();
         try {
-            if (!EntityProfiler.INSTANCE.startHotspot(source)) return 0;
+            if (!EntityProfiler.INSTANCE.startHotspot(source, minMspt)) return 0;
             return 1;
         } catch (Exception e) {
             EntityDetective.LOGGER.error("EntityDetective: unexpected error in hotspot command", e);
