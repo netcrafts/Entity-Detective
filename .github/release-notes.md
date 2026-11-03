@@ -4,5 +4,5 @@
   One line per feature or fix. Keep entries short and user-facing.
 -->
 
-- **New**: `/ed chunks` shows lazy-monster counts for each portal endpoint, with separate Overworld and Nether totals.
-- **Improved**: `/ed chunks` output is easier to scan, with mob-bearing portals listed first, Nether-coordinate sorting, aligned pair formatting, and zero counts hidden.
+- **Improved**: Cross-dimension teleport links across command output now show a hover hint to switch dimensions and rerun the command; same-dimension links still suggest `/tp`.
+- **Improved**: `--detail` chunk headers no longer print a redundant `/tp` command; the chunk coordinates remain clickable.

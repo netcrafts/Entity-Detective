@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.Identifier;
@@ -45,6 +46,7 @@ public class ResultFormatter {
     private ResultFormatter() {}
 
     private static final int MAX_CHUNKS_SHOWN = 50;
+    private static final String ALL_DIMENSIONS_LABEL = "all dimensions";
 
     // Color thresholds for mobcap saturation: green → yellow → red
     private static final int COLOR_LOW    = 0x55FF55; // <50%
@@ -75,19 +77,20 @@ public class ResultFormatter {
     }
 
     String tpTarget = tpTarget(source);
+    String playerDim = dimensionName(source.getLevel().dimension());
     for (HotspotResult r : results) {
-        source.sendSuccess(() -> formatHotspotLine(r, tpTarget), false);
+        source.sendSuccess(() -> formatHotspotLine(r, tpTarget, playerDim), false);
     }
     }
 
-    private static MutableComponent formatHotspotLine(HotspotResult r, String tpTarget) {
+    private static MutableComponent formatHotspotLine(HotspotResult r, String tpTarget, String playerDim) {
     ChunkPos pos = r.chunk();
     String dimName = dimensionName(r.dim());
     double mspt = r.mspt();
 
     // Click-to-tp on chunk coords (centre of chunk, current Y)
     String tpCmd = String.format("/tp " + tpTarget + " %d ~ %d", pos.getMiddleBlockX(), pos.getMiddleBlockZ());
-    ClickEvent click = new ClickEvent.SuggestCommand(tpCmd);
+    Style clickStyle = teleportLinkStyle(tpCmd, dimName, playerDim, ChatFormatting.AQUA);
 
     int msptColor;
     if (mspt < HOTSPOT_MSPT_MEDIUM)      msptColor = COLOR_LOW;
@@ -96,7 +99,7 @@ public class ResultFormatter {
 
     MutableComponent coords = Component.literal(
         String.format("  [%5d,%5d]", pos.x(), pos.z()))
-        .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
+        .withStyle(clickStyle);
     MutableComponent dim = Component.literal(
         String.format("  %-10s", dimName))
         .withStyle(ChatFormatting.GRAY);
@@ -183,13 +186,14 @@ public class ResultFormatter {
         source.sendSuccess(() -> Component.literal(header).withStyle(ChatFormatting.GOLD), false);
 
         String tpTarget = tpTarget(source);
+        String playerDim = dimensionName(source.getLevel().dimension());
         int shown = Math.min(results.size(), MAX_CHUNKS_SHOWN);
         for (int i = 0; i < shown; i++) {
             QueryResult r = results.get(i);
-            source.sendSuccess(() -> formatChunkLine(r, tpTarget), false);
+            source.sendSuccess(() -> formatChunkLine(r, tpTarget, dimName, playerDim), false);
             if (detail) {
                 for (Entity entity : r.entities()) {
-                    source.sendSuccess(() -> formatEntityDebugLine(entity, tpTarget), false);
+                    source.sendSuccess(() -> formatEntityDebugLine(entity, tpTarget, dimName, playerDim), false);
                 }
             }
         }
@@ -205,7 +209,8 @@ public class ResultFormatter {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static MutableComponent formatEntityDebugLine(Entity entity, String tpTarget) {
+        private static MutableComponent formatEntityDebugLine(
+            Entity entity, String tpTarget, String targetDim, String playerDim) {
         // 5.5.2 / 5.5.8 — getKey() can return null for unregistered modded entity types
         @Nullable Identifier typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         String type = typeKey != null ? typeKey.toString() : "unknown:" + entity.getType().getDescriptionId();
@@ -214,9 +219,9 @@ public class ResultFormatter {
         String reason = persistenceReason(entity);
         String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
         String tpCommand = String.format("/tp " + tpTarget + " %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
-        MutableComponent line = Component.literal("    ")
-                .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCommand)));
-        line.append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
+        MutableComponent line = Component.literal("    ");
+        line.append(Component.literal(coords).withStyle(
+            teleportLinkStyle(tpCommand, targetDim, playerDim, ChatFormatting.AQUA)));
         line.append(Component.literal("  —  ").withStyle(ChatFormatting.WHITE));
         line.append(Component.literal(type).withStyle(ChatFormatting.GREEN));
         if (!name.isEmpty()) {
@@ -237,7 +242,8 @@ public class ResultFormatter {
         return "unknown";
     }
 
-    private static MutableComponent formatChunkLine(QueryResult r, String tpTarget) {
+        private static MutableComponent formatChunkLine(
+            QueryResult r, String tpTarget, String targetDim, String playerDim) {
         ChunkPos pos = r.chunkPos();
         int count = r.entities().size();
         int midX = pos.getMiddleBlockX();
@@ -245,11 +251,9 @@ public class ResultFormatter {
 
         // Suggest /tp so the admin can click to teleport to the chunk center
         String tpCommand = String.format("/tp " + tpTarget + " %d ~ %d", midX, midZ);
-        ClickEvent click = new ClickEvent.SuggestCommand(tpCommand);
-
         MutableComponent coords = Component.literal(
                 String.format("  [%d, %d]", pos.x(), pos.z()))
-                .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
+            .withStyle(teleportLinkStyle(tpCommand, targetDim, playerDim, ChatFormatting.AQUA));
 
         MutableComponent countPart = Component.literal(" — " + count + " entities")
                 .withStyle(ChatFormatting.WHITE);
@@ -282,13 +286,14 @@ public class ResultFormatter {
         source.sendSuccess(() -> Component.literal(header).withStyle(ChatFormatting.GOLD), false);
 
         String tpTarget = tpTarget(source);
+        String playerDim = dimensionName(source.getLevel().dimension());
         int shown = Math.min(results.size(), MAX_CHUNKS_SHOWN);
         for (int i = 0; i < shown; i++) {
             BELocateResult r = results.get(i);
-            source.sendSuccess(() -> formatBEChunkLine(r, tpTarget), false);
+            source.sendSuccess(() -> formatBEChunkLine(r, tpTarget, dimName, playerDim), false);
             if (detail) {
                 for (BlockPos pos : r.positions()) {
-                    source.sendSuccess(() -> formatBEPosLine(pos, tpTarget), false);
+                    source.sendSuccess(() -> formatBEPosLine(pos, tpTarget, dimName, playerDim), false);
                 }
             }
         }
@@ -300,18 +305,17 @@ public class ResultFormatter {
         }
     }
 
-    private static MutableComponent formatBEChunkLine(BELocateResult r, String tpTarget) {
+        private static MutableComponent formatBEChunkLine(
+            BELocateResult r, String tpTarget, String targetDim, String playerDim) {
         ChunkPos pos = r.chunkPos();
         int count = r.positions().size();
         int midX = pos.getMiddleBlockX();
         int midZ = pos.getMiddleBlockZ();
 
         String tpCommand = String.format("/tp " + tpTarget + " %d ~ %d", midX, midZ);
-        ClickEvent click = new ClickEvent.SuggestCommand(tpCommand);
-
         MutableComponent coords = Component.literal(
                 String.format("  [%d, %d]", pos.x(), pos.z()))
-                .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
+            .withStyle(teleportLinkStyle(tpCommand, targetDim, playerDim, ChatFormatting.AQUA));
 
         MutableComponent countPart = Component.literal(" — " + count + " block entities")
                 .withStyle(ChatFormatting.WHITE);
@@ -319,12 +323,12 @@ public class ResultFormatter {
         return coords.append(countPart);
     }
 
-    private static MutableComponent formatBEPosLine(BlockPos pos, String tpTarget) {
+    private static MutableComponent formatBEPosLine(
+            BlockPos pos, String tpTarget, String targetDim, String playerDim) {
         String coords = String.format("[%d, %d, %d]", pos.getX(), pos.getY(), pos.getZ());
         String tpCommand = String.format("/tp " + tpTarget + " %d %d %d", pos.getX(), pos.getY(), pos.getZ());
-        return Component.literal("    ")
-                .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCommand)))
-                .append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
+        return Component.literal("    ").append(Component.literal(coords).withStyle(
+                teleportLinkStyle(tpCommand, targetDim, playerDim, ChatFormatting.AQUA)));
     }
 
     // -------------------------------------------------------------------------
@@ -354,6 +358,7 @@ public class ResultFormatter {
                 .withStyle(ChatFormatting.GOLD), false);
 
         String tpTarget = tpTarget(source);
+        String playerDim = dimensionName(source.getLevel().dimension());
         int shown = Math.min(total, MAX_CHUNKS_SHOWN);
         int i = 0;
         for (Map.Entry<BlockPos, Integer> entry : counts.entrySet()) {
@@ -364,10 +369,9 @@ public class ResultFormatter {
             // Color: green <50%, yellow 50-85%, red >85%
             int color = pct > 85 ? COLOR_HIGH : pct >= 50 ? COLOR_MEDIUM : COLOR_LOW;
             String tpCommand = String.format("/tp " + tpTarget + " %d %d %d", pos.getX(), pos.getY(), pos.getZ());
-            ClickEvent click = new ClickEvent.SuggestCommand(tpCommand);
             MutableComponent coordPart = Component.literal(
                     String.format("  [%d, %d, %d]", pos.getX(), pos.getY(), pos.getZ()))
-                    .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
+                    .withStyle(teleportLinkStyle(tpCommand, null, playerDim, ChatFormatting.AQUA));
             MutableComponent tickPart = Component.literal(
                     String.format(" — %d/%d ticks (%d%%)", tickCount, ticks, pct))
                     .withStyle(Style.EMPTY.withColor(color));
@@ -754,12 +758,13 @@ public class ResultFormatter {
         source.sendSuccess(() -> Component.literal(header).withStyle(ChatFormatting.GOLD), false);
 
         String tpTarget = tpTarget(source);
+        String playerDim = dimensionName(source.getLevel().dimension());
         int shown = Math.min(results.size(), MAX_CHUNKS_SHOWN);
         for (int i = 0; i < shown; i++) {
             QueryResult r = results.get(i);
-            source.sendSuccess(() -> formatDetailChunkLine(r, tpTarget), false);
+            source.sendSuccess(() -> formatDetailChunkLine(r, tpTarget, dimName, playerDim), false);
             for (Entity entity : r.entities()) {
-                source.sendSuccess(() -> formatDetailEntityLine(entity, tpTarget), false);
+                source.sendSuccess(() -> formatDetailEntityLine(entity, tpTarget, dimName, playerDim), false);
             }
         }
 
@@ -774,20 +779,20 @@ public class ResultFormatter {
                 .withStyle(ChatFormatting.GRAY), false);
     }
 
-    private static MutableComponent formatDetailChunkLine(QueryResult r, String tpTarget) {
+    private static MutableComponent formatDetailChunkLine(
+            QueryResult r, String tpTarget, String targetDim, String playerDim) {
         ChunkPos pos = r.chunkPos();
         int count = r.entities().size();
         int midX = pos.getMiddleBlockX();
         int midZ = pos.getMiddleBlockZ();
         String tpCmd = String.format("/tp " + tpTarget + " %d ~ %d", midX, midZ);
-        ClickEvent click = new ClickEvent.SuggestCommand(tpCmd);
-        String text = String.format("  Chunk (%d, %d)  \u00d7  %d  \u2192  /tp " + tpTarget + " %d ~ %d",
-                pos.x(), pos.z(), count, midX, midZ);
+        String text = String.format("  Chunk (%d, %d)  \u00d7  %d", pos.x(), pos.z(), count);
         return Component.literal(text)
-                .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
+            .withStyle(teleportLinkStyle(tpCmd, targetDim, playerDim, ChatFormatting.AQUA));
     }
 
-    private static MutableComponent formatDetailEntityLine(Entity entity, String tpTarget) {
+        private static MutableComponent formatDetailEntityLine(
+            Entity entity, String tpTarget, String targetDim, String playerDim) {
         String type;
         if (entity instanceof net.minecraft.world.entity.item.ItemEntity ie) {
             @Nullable Identifier itemKey = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
@@ -801,9 +806,9 @@ public class ResultFormatter {
         String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
         String tpCmd = String.format("/tp " + tpTarget + " %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
 
-        MutableComponent line = Component.literal("    ")
-                .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCmd)));
-        line.append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
+        MutableComponent line = Component.literal("    ");
+        line.append(Component.literal(coords).withStyle(
+            teleportLinkStyle(tpCmd, targetDim, playerDim, ChatFormatting.AQUA)));
         line.append(Component.literal("  \u2014  ").withStyle(ChatFormatting.WHITE));
         line.append(Component.literal(type).withStyle(ChatFormatting.GREEN));
         if (!name.isEmpty()) {
@@ -879,8 +884,9 @@ public class ResultFormatter {
                 .withStyle(ChatFormatting.GOLD), false);
 
         String tpTarget = tpTarget(source);
+        String playerDim = dimensionName(source.getLevel().dimension());
         for (Entity entity : entities) {
-            source.sendSuccess(() -> formatLazyEntityLine(entity, tpTarget), false);
+            source.sendSuccess(() -> formatLazyEntityLine(entity, tpTarget, dimName, playerDim), false);
         }
 
         source.sendSuccess(() -> Component.literal(
@@ -906,8 +912,9 @@ public class ResultFormatter {
                 .withStyle(ChatFormatting.GOLD), false);
 
         String tpTarget = tpTarget(source);
+        String playerDim = dimensionName(source.getLevel().dimension());
         for (Entity entity : entities) {
-            source.sendSuccess(() -> formatLazyEntityLine(entity, tpTarget), false);
+            source.sendSuccess(() -> formatLazyEntityLine(entity, tpTarget, dimName, playerDim), false);
         }
 
         source.sendSuccess(() -> Component.literal(
@@ -915,7 +922,8 @@ public class ResultFormatter {
                 .withStyle(ChatFormatting.GRAY), false);
     }
 
-    private static MutableComponent formatLazyEntityLine(Entity entity, String tpTarget) {
+        private static MutableComponent formatLazyEntityLine(
+            Entity entity, String tpTarget, String targetDim, String playerDim) {
         String type;
         if (entity instanceof net.minecraft.world.entity.item.ItemEntity ie) {
             @Nullable Identifier itemKey = BuiltInRegistries.ITEM.getKey(ie.getItem().getItem());
@@ -928,9 +936,9 @@ public class ResultFormatter {
         String name   = cn2 != null ? " \"" + cn2.getString() + "\"" : "";
         String coords = String.format("[%d, %d, %d]", (int) entity.getX(), (int) entity.getY(), (int) entity.getZ());
         String tpCmd  = String.format("/tp " + tpTarget + " %.1f %.1f %.1f", entity.getX(), entity.getY(), entity.getZ());
-        MutableComponent line = Component.literal("  ")
-                .withStyle(Style.EMPTY.withClickEvent(new ClickEvent.SuggestCommand(tpCmd)));
-        line.append(Component.literal(coords).withStyle(ChatFormatting.AQUA));
+        MutableComponent line = Component.literal("  ");
+        line.append(Component.literal(coords).withStyle(
+            teleportLinkStyle(tpCmd, targetDim, playerDim, ChatFormatting.AQUA)));
         line.append(Component.literal("  —  ").withStyle(ChatFormatting.WHITE));
         line.append(Component.literal(type).withStyle(ChatFormatting.GREEN));
         if (!name.isEmpty()) {
@@ -1081,15 +1089,47 @@ public class ResultFormatter {
             default           -> entry.dimPath();
         };
         String coords = String.format("%s (%d, %d)", dimLabel, entry.pos().x(), entry.pos().z());
-        if (entry.dimPath().equals(playerDim)) {
-            String tpCmd = String.format("/tp " + tpTarget + " %d ~ %d",
-                    entry.pos().getMiddleBlockX(), entry.pos().getMiddleBlockZ());
-            Style style = Style.EMPTY
-                    .withColor(ChatFormatting.GREEN)
-                    .withClickEvent(new ClickEvent.SuggestCommand(tpCmd));
-            return Component.literal(coords).withStyle(style);
+        String tpCommand = String.format("/tp " + tpTarget + " %d ~ %d",
+                entry.pos().getMiddleBlockX(), entry.pos().getMiddleBlockZ());
+        return Component.literal(coords).withStyle(
+                teleportLinkStyle(tpCommand, entry.dimPath(), playerDim, ChatFormatting.GREEN));
+    }
+
+    private static Style teleportLinkStyle(
+            String tpCommand, @Nullable String targetDimension, String playerDimension, ChatFormatting localColor) {
+        if (targetDimension != null
+                && !targetDimension.equals(ALL_DIMENSIONS_LABEL)
+                && normalizeDimension(targetDimension).equals(normalizeDimension(playerDimension))) {
+            return Style.EMPTY.withColor(localColor)
+                    .withClickEvent(new ClickEvent.SuggestCommand(tpCommand));
         }
-        return Component.literal(coords).withStyle(Style.EMPTY.withColor(ChatFormatting.RED));
+
+        String instruction;
+        if (targetDimension == null || targetDimension.equals(ALL_DIMENSIONS_LABEL)) {
+            instruction = "Switch to the dimension containing this result, then rerun the command to get clickable teleport links.";
+        } else {
+            instruction = "Switch to " + dimensionInstructionName(targetDimension)
+                    + ", then rerun the command to get clickable teleport links.";
+        }
+        return Style.EMPTY.withColor(ChatFormatting.RED)
+            .withHoverEvent(new HoverEvent.ShowText(Component.literal(instruction)));
+        }
+
+    private static String normalizeDimension(String dimension) {
+        return switch (dimension) {
+            case "the_nether", "nether" -> "nether";
+            case "the_end", "end" -> "end";
+            default -> dimension;
+        };
+    }
+
+    private static String dimensionInstructionName(String dimension) {
+        return switch (normalizeDimension(dimension)) {
+            case "overworld" -> "the Overworld";
+            case "nether" -> "the Nether";
+            case "end" -> "the End";
+            default -> dimension;
+        };
     }
 
     static String tpTarget(CommandSourceStack source) {
