@@ -8,8 +8,12 @@ import net.minecraft.server.level.DistanceManager;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.Ticket;
 import net.minecraft.server.level.TicketType;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.TicketStorage;
+import net.minecraft.world.level.entity.EntityTypeTest;
 
 import netcrafts.detective.mixin.DistanceManagerAccessor;
 import netcrafts.detective.mixin.TicketStorageAccessor;
@@ -17,8 +21,10 @@ import netcrafts.detective.mixin.TicketStorageAccessor;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -51,7 +57,7 @@ public class ChunkLoaderQuery {
      * @param type    the reason this chunk is force-loaded
      * @param dimPath raw MC dimension path, e.g. {@code "overworld"}, {@code "the_nether"}
      */
-    public record LoaderEntry(ChunkPos pos, LoaderType type, String dimPath) {}
+    public record LoaderEntry(ChunkPos pos, LoaderType type, String dimPath, long lazyMonsterCount) {}
 
     /**
      * A reported chunk loader result.
@@ -78,6 +84,7 @@ public class ChunkLoaderQuery {
                 default           -> other;
             };
             collectTickets(level, dimPath, bucket);
+            countLazyMonsterRings(level, bucket);
         }
 
         return buildResults(overworld, nether, other);
@@ -102,9 +109,91 @@ public class ChunkLoaderQuery {
 
             LoaderType found = classifyTickets(list);
             if (found != null) {
-                out.add(new LoaderEntry(ChunkPos.unpack(posLong), found, dimPath));
+                out.add(new LoaderEntry(ChunkPos.unpack(posLong), found, dimPath, 0L));
             }
         }
+    }
+
+    private static void countLazyMonsterRings(ServerLevel level, List<LoaderEntry> entries) {
+        if (entries.isEmpty()) return;
+
+        Map<Long, Long> countsByChunk = countLazyMonsterChunks(level);
+        long[] countsByLoader = new long[entries.size()];
+        for (Map.Entry<Long, Long> chunkCount : countsByChunk.entrySet()) {
+            int nearestIndex = findNearestLoader(entries, ChunkPos.unpack(chunkCount.getKey()));
+            if (nearestIndex >= 0) countsByLoader[nearestIndex] += chunkCount.getValue();
+        }
+
+        for (int i = 0; i < entries.size(); i++) {
+            LoaderEntry entry = entries.get(i);
+            entries.set(i, new LoaderEntry(entry.pos(), entry.type(), entry.dimPath(), countsByLoader[i]));
+        }
+    }
+
+    private static Map<Long, Long> countLazyMonsterChunks(ServerLevel level) {
+        List<Entity> lazyMonsters = new ArrayList<>();
+        level.getEntities(
+                EntityTypeTest.forClass(Entity.class),
+                entity -> entity.getType().getCategory() == MobCategory.MONSTER
+                && ChunkStatusUtil.isLazy(level, entity)
+                && !isPersistentMob(entity),
+                lazyMonsters);
+
+        Map<Long, Long> countsByChunk = new HashMap<>();
+        for (Entity entity : lazyMonsters) {
+            ChunkPos pos = ChunkPos.containing(entity.blockPosition());
+            long chunkKey = pos.pack();
+            countsByChunk.put(chunkKey, countsByChunk.getOrDefault(chunkKey, 0L) + 1L);
+        }
+        return countsByChunk;
+    }
+
+    private static int findNearestLoader(List<LoaderEntry> entries, ChunkPos mobChunk) {
+        int nearestIndex = -1;
+        int nearestDistance = Integer.MAX_VALUE;
+        for (int i = 0; i < entries.size(); i++) {
+            LoaderEntry candidate = entries.get(i);
+            int distance = lazyRingDistance(candidate, mobChunk);
+            if (distance < 0) continue;
+            if (isPreferredLoader(candidate, distance, entries, nearestIndex, nearestDistance)) {
+                nearestIndex = i;
+                nearestDistance = distance;
+            }
+        }
+        return nearestIndex;
+    }
+
+    private static boolean isPreferredLoader(
+            LoaderEntry candidate, int distance, List<LoaderEntry> entries, int nearestIndex, int nearestDistance) {
+        if (nearestIndex < 0 || distance < nearestDistance) return true;
+        return distance == nearestDistance
+                && compareChunkPositions(candidate.pos(), entries.get(nearestIndex).pos()) < 0;
+    }
+
+    private static int lazyRingDistance(LoaderEntry entry, ChunkPos mobChunk) {
+        int lazyRingWidth = entry.type() == LoaderType.PORTAL ? 5 : 3;
+        int activeRadius = entry.type() == LoaderType.PORTAL ? 1 : 0;
+        int radius = activeRadius + lazyRingWidth;
+        int dx = mobChunk.x() - entry.pos().x();
+        int dz = mobChunk.z() - entry.pos().z();
+        int distance = Math.max(Math.abs(dx), Math.abs(dz));
+        if (distance > radius) return -1;
+        if (entry.type() == LoaderType.PORTAL && Math.abs(dx) <= activeRadius && Math.abs(dz) <= activeRadius) return -1;
+        if (entry.type() == LoaderType.ENDER_PEARL && distance == 0) return -1;
+        return distance;
+    }
+
+    private static int compareChunkPositions(ChunkPos left, ChunkPos right) {
+        int xComparison = Integer.compare(left.x(), right.x());
+        return xComparison != 0 ? xComparison : Integer.compare(left.z(), right.z());
+    }
+
+    private static boolean isPersistentMob(Entity entity) {
+        return entity instanceof Mob mob
+                && (mob.isPersistenceRequired()
+                    || mob.requiresCustomPersistence()
+                    || mob.isPassenger()
+                    || mob.isLeashed());
     }
 
     /**

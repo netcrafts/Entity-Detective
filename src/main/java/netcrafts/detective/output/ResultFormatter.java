@@ -33,8 +33,11 @@ import netcrafts.detective.query.RangeFilter;
 import netcrafts.detective.query.MobCapInfo.CategoryInfo;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @SuppressWarnings({"null", "java:S2589"})
 public class ResultFormatter {
@@ -55,59 +58,58 @@ public class ResultFormatter {
     // -------------------------------------------------------------------------
     // Hotspot display
     // -------------------------------------------------------------------------
-
     public static void sendHotspotResults(
-            CommandSourceStack source,
-            List<HotspotResult> results,
-            int ticks,
-            double minMspt) {
+        CommandSourceStack source,
+        List<HotspotResult> results,
+        int ticks,
+        double minMspt) {
+    source.sendSuccess(() -> Component.literal(
+        "-- Entity Hotspots (" + ticks + " tick sample) --")
+        .withStyle(ChatFormatting.GOLD), false);
+
+    if (results.isEmpty()) {
         source.sendSuccess(() -> Component.literal(
-                "-- Entity Hotspots (" + ticks + " tick sample) --")
-                .withStyle(ChatFormatting.GOLD), false);
+            String.format("  No hotspots found above %.1f ms.", minMspt))
+            .withStyle(ChatFormatting.YELLOW), false);
+        return;
+    }
 
-        if (results.isEmpty()) {
-            source.sendSuccess(() -> Component.literal(
-                    String.format("  No hotspots found above %.1f ms.", minMspt))
-                    .withStyle(ChatFormatting.YELLOW), false);
-            return;
-        }
-
-        String tpTarget = tpTarget(source);
-        for (HotspotResult r : results) {
-            source.sendSuccess(() -> formatHotspotLine(r, tpTarget), false);
-        }
+    String tpTarget = tpTarget(source);
+    for (HotspotResult r : results) {
+        source.sendSuccess(() -> formatHotspotLine(r, tpTarget), false);
+    }
     }
 
     private static MutableComponent formatHotspotLine(HotspotResult r, String tpTarget) {
-        ChunkPos pos = r.chunk();
-        String dimName = dimensionName(r.dim());
-        double mspt = r.mspt();
+    ChunkPos pos = r.chunk();
+    String dimName = dimensionName(r.dim());
+    double mspt = r.mspt();
 
-        // Click-to-tp on chunk coords (centre of chunk, current Y)
-        String tpCmd = String.format("/tp " + tpTarget + " %d ~ %d", pos.getMiddleBlockX(), pos.getMiddleBlockZ());
-        ClickEvent click = new ClickEvent.SuggestCommand(tpCmd);
+    // Click-to-tp on chunk coords (centre of chunk, current Y)
+    String tpCmd = String.format("/tp " + tpTarget + " %d ~ %d", pos.getMiddleBlockX(), pos.getMiddleBlockZ());
+    ClickEvent click = new ClickEvent.SuggestCommand(tpCmd);
 
-        int msptColor;
-        if (mspt < HOTSPOT_MSPT_MEDIUM)      msptColor = COLOR_LOW;
-        else if (mspt < HOTSPOT_MSPT_HIGH)   msptColor = COLOR_MEDIUM;
-        else                                  msptColor = COLOR_HIGH;
+    int msptColor;
+    if (mspt < HOTSPOT_MSPT_MEDIUM)      msptColor = COLOR_LOW;
+    else if (mspt < HOTSPOT_MSPT_HIGH)   msptColor = COLOR_MEDIUM;
+    else                                  msptColor = COLOR_HIGH;
 
-        MutableComponent coords = Component.literal(
-                String.format("  [%5d,%5d]", pos.x(), pos.z()))
-                .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
-        MutableComponent dim = Component.literal(
-                String.format("  %-10s", dimName))
-                .withStyle(ChatFormatting.GRAY);
-        MutableComponent count = Component.literal(
-                String.format("  %5d x ", r.count()))
-                .withStyle(ChatFormatting.WHITE);
-        MutableComponent type = Component.literal(r.typeId().toString())
-                .withStyle(ChatFormatting.GREEN);
-        MutableComponent msptPart = Component.literal(
-                String.format("  %.1f ms", mspt))
-                .withStyle(Style.EMPTY.withColor(msptColor));
+    MutableComponent coords = Component.literal(
+        String.format("  [%5d,%5d]", pos.x(), pos.z()))
+        .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(click));
+    MutableComponent dim = Component.literal(
+        String.format("  %-10s", dimName))
+        .withStyle(ChatFormatting.GRAY);
+    MutableComponent count = Component.literal(
+        String.format("  %5d x ", r.count()))
+        .withStyle(ChatFormatting.WHITE);
+    MutableComponent type = Component.literal(r.typeId().toString())
+        .withStyle(ChatFormatting.GREEN);
+    MutableComponent msptPart = Component.literal(
+        String.format("  %.1f ms", mspt))
+        .withStyle(Style.EMPTY.withColor(msptColor));
 
-        return coords.append(dim).append(count).append(type).append(msptPart);
+    return coords.append(dim).append(count).append(type).append(msptPart);
     }
 
     // -------------------------------------------------------------------------
@@ -942,43 +944,131 @@ public class ResultFormatter {
     // -------------------------------------------------------------------------
 
     public static void sendChunkLoaderResults(CommandSourceStack source, List<ChunkLoaderResult> results) {
-        long portalCount = results.stream().filter(r -> r.primary().type() == LoaderType.PORTAL).count();
-        long pearlCount  = results.stream().filter(r -> r.primary().type() == LoaderType.ENDER_PEARL).count();
-
-        StringBuilder header = new StringBuilder("-- chunk loaders: ");
-        if (portalCount == 0 && pearlCount == 0) {
-            header.append("none found");
-        } else {
-            if (portalCount > 0) {
-                header.append(portalCount).append(" portal loader").append(portalCount > 1 ? "s" : "");
-            }
-            if (portalCount > 0 && pearlCount > 0) header.append(", ");
-            if (pearlCount > 0) {
-                header.append(pearlCount).append(" stasis chamber").append(pearlCount > 1 ? "s" : "");
-            }
-        }
-        header.append(" --");
-        final String headerStr = header.toString();
-        source.sendSuccess(() -> Component.literal(headerStr).withStyle(ChatFormatting.GOLD), false);
+        List<ChunkLoaderResult> sortedResults = results.stream()
+            .sorted(chunkLoaderResultOrder())
+            .toList();
+        source.sendSuccess(() -> Component.literal(chunkLoaderHeader(results))
+                .withStyle(ChatFormatting.GOLD), false);
 
         String playerDim = source.getLevel().dimension().identifier().getPath();
         String tpTarget = tpTarget(source);
+        sendChunkLoaderGroups(source, sortedResults, playerDim, tpTarget);
+    }
+
+    private static String chunkLoaderHeader(List<ChunkLoaderResult> results) {
+        long portalCount = results.stream().filter(r -> r.primary().type() == LoaderType.PORTAL).count();
+        long pearlCount  = results.stream().filter(r -> r.primary().type() == LoaderType.ENDER_PEARL).count();
+        Set<LoaderEntry> uniqueEndpoints = new HashSet<>();
         for (ChunkLoaderResult result : results) {
-            source.sendSuccess(() -> formatChunkLoaderLine(result, playerDim, tpTarget), false);
+            uniqueEndpoints.add(result.primary());
+            if (result.paired() != null) uniqueEndpoints.add(result.paired());
+        }
+        long overworldLazyMobs = uniqueEndpoints.stream()
+            .filter(entry -> entry.dimPath().equals("overworld"))
+            .mapToLong(LoaderEntry::lazyMonsterCount)
+            .sum();
+        long netherLazyMobs = uniqueEndpoints.stream()
+            .filter(entry -> entry.dimPath().equals("the_nether"))
+            .mapToLong(LoaderEntry::lazyMonsterCount)
+            .sum();
+        if (portalCount == 0 && pearlCount == 0) return "-- chunk loaders: none found --";
+
+        StringBuilder header = new StringBuilder("-- chunk loaders: ");
+        if (portalCount > 0) {
+            header.append(portalCount).append(" portal loader").append(portalCount > 1 ? "s" : "");
+        }
+        if (portalCount > 0 && pearlCount > 0) header.append(", ");
+        if (pearlCount > 0) {
+            header.append(pearlCount).append(" stasis chamber").append(pearlCount > 1 ? "s" : "");
+        }
+        header.append(", OW Lazy Mobs: ").append(overworldLazyMobs)
+            .append(", Nether Lazy Mobs: ").append(netherLazyMobs);
+        return header.append(" --").toString();
+    }
+
+    private static void sendChunkLoaderGroups(
+            CommandSourceStack source, List<ChunkLoaderResult> results, String playerDim, String tpTarget) {
+        for (int i = 0; i < results.size(); i++) {
+            for (MutableComponent line : formatChunkLoaderLines(results.get(i), playerDim, tpTarget)) {
+                source.sendSuccess(() -> line, false);
+            }
+            if (i < results.size() - 1) {
+                source.sendSuccess(() -> Component.literal(" "), false);
+            }
         }
     }
 
-    private static MutableComponent formatChunkLoaderLine(ChunkLoaderResult result, String playerDim, String tpTarget) {
+    private static Comparator<ChunkLoaderResult> chunkLoaderResultOrder() {
+        return Comparator.comparingInt(ResultFormatter::chunkLoaderMobPriority)
+            .thenComparingInt(ResultFormatter::chunkLoaderSortGroup)
+                .thenComparing(result -> chunkLoaderSortEntry(result).dimPath())
+                .thenComparingInt(result -> chunkLoaderSortEntry(result).pos().x())
+                .thenComparingInt(result -> chunkLoaderSortEntry(result).pos().z())
+                .thenComparing(result -> result.primary().dimPath())
+                .thenComparingInt(result -> result.primary().pos().x())
+                .thenComparingInt(result -> result.primary().pos().z());
+    }
+
+    private static int chunkLoaderMobPriority(ChunkLoaderResult result) {
+        if (result.primary().type() != LoaderType.PORTAL) return 2;
+        if (result.primary().lazyMonsterCount() > 0
+                || (result.paired() != null && result.paired().lazyMonsterCount() > 0)) return 0;
+        return 1;
+    }
+
+    private static int chunkLoaderSortGroup(ChunkLoaderResult result) {
+        if (result.primary().type() != LoaderType.PORTAL) return 3;
+        if (result.paired() != null || result.primary().dimPath().equals("the_nether")) return 0;
+        if (result.primary().dimPath().equals("overworld")) return 1;
+        return 2;
+    }
+
+    private static LoaderEntry chunkLoaderSortEntry(ChunkLoaderResult result) {
+        return result.paired() != null ? result.paired() : result.primary();
+    }
+
+    private static List<MutableComponent> formatChunkLoaderLines(
+            ChunkLoaderResult result, String playerDim, String tpTarget) {
         LoaderEntry primary = result.primary();
-        String typeLabel = primary.type() == LoaderType.PORTAL ? "Portal" : "Pearl ";
-        MutableComponent line = Component.literal("  " + typeLabel + "  ").withStyle(ChatFormatting.WHITE);
-        line.append(formatChunkLink(primary, playerDim, tpTarget));
         LoaderEntry paired = result.paired();
         if (paired != null) {
-            line.append(Component.literal("   |  ").withStyle(ChatFormatting.GRAY));
-            line.append(formatChunkLink(paired, playerDim, tpTarget));
-        } else if (primary.type() == LoaderType.PORTAL) {
+            LoaderEntry nether = primary.dimPath().equals("the_nether") ? primary : paired;
+            LoaderEntry overworld = nether == primary ? paired : primary;
+            return List.of(
+                    formatChunkLoaderEndpoint("  ", nether, false, playerDim, tpTarget),
+                    formatChunkLoaderEndpoint("  ", overworld, false, playerDim, tpTarget));
+        }
+
+        if (primary.type() == LoaderType.PORTAL && primary.dimPath().equals("the_nether")) {
+            return List.of(
+                formatChunkLoaderEndpoint("  ", primary, false, playerDim, tpTarget),
+                formatUnconfirmedEndpoint("OW"));
+        }
+        if (primary.type() == LoaderType.PORTAL && primary.dimPath().equals("overworld")) {
+            return List.of(
+                formatUnconfirmedEndpoint("Nether"),
+                formatChunkLoaderEndpoint("  ", primary, false, playerDim, tpTarget));
+        }
+
+        String prefix = primary.type() == LoaderType.PORTAL ? "  " : "  Pearl   ";
+        return List.of(formatChunkLoaderEndpoint(
+            prefix, primary, false, playerDim, tpTarget));
+        }
+
+        private static MutableComponent formatUnconfirmedEndpoint(String dimension) {
+        return Component.literal("  " + dimension + " (unconfirmed)").withStyle(ChatFormatting.GRAY);
+    }
+
+    private static MutableComponent formatChunkLoaderEndpoint(
+            String prefix, LoaderEntry entry, boolean unconfirmed, String playerDim, String tpTarget) {
+        MutableComponent line = Component.literal(prefix).withStyle(ChatFormatting.WHITE);
+        line.append(formatChunkLink(entry, playerDim, tpTarget));
+        if (unconfirmed) {
             line.append(Component.literal("  (unconfirmed)").withStyle(ChatFormatting.GRAY));
+        }
+        if (entry.lazyMonsterCount() > 0) {
+            line.append(Component.literal("  Lazy Mobs: " + entry.lazyMonsterCount())
+                    .withStyle(ChatFormatting.YELLOW));
         }
         return line;
     }

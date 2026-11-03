@@ -573,7 +573,6 @@ public class LocateCommand {
                         .executes(ctx -> executeChunkLoaders(ctx, LoaderType.ENDER_PEARL))
                     )
                 )
-
                 // /entitydetective nark <playerName> — profile all entities in 21x21 chunks around target
                 .then(Commands.literal("nark")
                     .then(Commands.argument("playerName", StringArgumentType.word())
