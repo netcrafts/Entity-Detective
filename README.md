@@ -68,7 +68,7 @@ A server-side [Fabric](https://fabricmc.net/) mod for Minecraft that gives admin
 
 | Flag | Description |
 |------|-------------|
-| `--lazy-only` | Filter to non-persistent entities in **lazy chunks** — no player within 128 blocks. Despawn can't fire so they accumulate silently. Returns a type-count table; add `--detail` to see individual entities. |
+| `--lazy-only` | Filter to non-persistent entities in **lazy chunks** — loaded chunks where entities are not ticking. Returns a type-count table; add `--detail` to see individual entities. |
 | `--persistent` | Filter to persistent mobs: name-tagged, holding a picked-up item, leashed, or riding a vehicle. Returns a type-count table. |
 | `--world <dim>` | Scope to one dimension: `overworld`, `nether`, or `end`. |
 | `--range <chunks>` | Scope to a (2N+1)×(2N+1) chunk square centred on your position (0–32). `--range 0` targets the single chunk you are standing in. Player source required; mutually exclusive with `--world`. |
@@ -203,11 +203,11 @@ Minecraft loads chunks around active nether portals via `PORTAL` chunk tickets, 
 
 ### Lazy chunks
 
-Chunks that are loaded but not ticked — no player within 128 blocks — are called **lazy chunks**. Entities there never move, never breed, and despawn logic never fires, so they accumulate silently until a player enters range. `--lazy-only` filters to non-persistent entities that fail the 128-block proximity check, showing what the server will never clean up on its own.
+**Lazy chunks** are loaded chunks where entities are not ticking. Entities there never move, never breed, and despawn logic never fires, so they can accumulate silently. `--lazy-only` checks the world's entity-ticking status, not player distance. Mobs in a chunkloader's entity-ticking core are excluded even when no player is nearby; mobs in its non-entity-ticking outer chunks remain eligible.
 
 ### Persistent mobs
 
-A mob **won't naturally despawn** if it has been name-tagged, has picked up a ground item, is leashed, or is riding a vehicle. By default `mob <category>` excludes persistent mobs (they don't contribute to mob cap). Use `--persistent` to see only them. Combine `--lazy-only --persistent` to find mobs that are both outside player range and undespawnable.
+A mob **won't naturally despawn** if it has been name-tagged, has picked up a ground item, is leashed, or is riding a vehicle. By default `mob <category>` excludes persistent mobs (they don't contribute to mob cap). Use `--persistent` to see only them. Combine `--lazy-only --persistent` to find persistent mobs in non-entity-ticking chunks.
 
 ### Range search
 
